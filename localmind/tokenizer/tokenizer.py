@@ -30,13 +30,22 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Iterable
+from functools import lru_cache
+from itertools import pairwise
 from pathlib import Path
 from typing import Literal
 
-from localmind.tokenizer.bpe import Pair, train_bpe_incremental, train_bpe_naive
+from localmind.tokenizer.bpe import Pair, merge_word, train_bpe_incremental, train_bpe_naive
 from localmind.tokenizer.regex_split import pretokenize
 
 BASE_VOCAB_SIZE = 256
+
+# Bounds the per-pre-token BPE cache each Tokenizer instance keeps (see __init__).
+# Natural text repeats the same word/number/punctuation-run constantly, so caching
+# `pre_token_bytes -> ids` turns an O(occurrences) cost into O(distinct pre-tokens).
+# Bounded (LRU-evicted) so adversarial input with unboundedly many distinct chunks
+# can't grow the cache without limit.
+DEFAULT_PRETOKEN_CACHE_SIZE = 65536
 
 NAMED_SPECIAL_TOKENS: tuple[str, ...] = (
     "<|bos|>",
@@ -77,6 +86,7 @@ class Tokenizer:
         vocab: dict[int, bytes],
         special_tokens: tuple[str, ...] = SPECIAL_TOKENS,
         base_vocab_size: int = BASE_VOCAB_SIZE,
+        pretoken_cache_size: int = DEFAULT_PRETOKEN_CACHE_SIZE,
     ) -> None:
         self.merges: list[Pair] = list(merges)  # ranked; index == training order
         self._merge_rank: dict[Pair, int] = {pair: rank for rank, pair in enumerate(self.merges)}
@@ -96,6 +106,20 @@ class Tokenizer:
         }
         self.id_to_bytes: dict[int, bytes] = dict(vocab)
         self._vocab_size = self.first_merge_id + len(self.merges)
+
+        # Per-instance, bounded LRU cache of pre_token_bytes -> ids. Built here (not
+        # as a class-level @lru_cache) so the cache is scoped to this Tokenizer and
+        # doesn't keep `self` alive forever via a module-level cache's key tuple.
+        # `pretoken_cache_size=0` disables caching outright (goes straight to the
+        # uncached path), which `test_cached_and_uncached_paths_agree` in
+        # test_tokenizer.py uses to compare cached vs. uncached output.
+        self.pretoken_cache_size = pretoken_cache_size
+        if pretoken_cache_size > 0:
+            self._encode_chunk_cached = lru_cache(maxsize=pretoken_cache_size)(
+                self._encode_chunk_bytes_uncached
+            )
+        else:
+            self._encode_chunk_cached = self._encode_chunk_bytes_uncached
 
         self.bos_id = self._special_to_id["<|bos|>"]
         self.eos_id = self._special_to_id["<|eos|>"]
@@ -204,6 +228,7 @@ class Tokenizer:
         vocab_size: int,
         algorithm: Literal["naive", "incremental"] = "incremental",
         special_tokens: tuple[str, ...] = SPECIAL_TOKENS,
+        pretoken_cache_size: int = DEFAULT_PRETOKEN_CACHE_SIZE,
     ) -> Tokenizer:
         """Train a byte-level BPE tokenizer over `texts`.
 
@@ -212,6 +237,11 @@ class Tokenizer:
         unrelated documents into one giant string before calling this would still be
         safe, but passing them separately is both clearer and lets the regex
         pre-tokenizer run per-document.
+
+        `pretoken_cache_size=0` trains a tokenizer with per-pre-token BPE caching
+        disabled -- mainly useful for comparing cached vs. uncached encode output in
+        tests (`test_cached_and_uncached_paths_agree`), or for memory-constrained
+        deployments that would rather not hold the cache.
         """
         first_merge_id = BASE_VOCAB_SIZE + len(special_tokens)
         if vocab_size < first_merge_id:
@@ -228,6 +258,7 @@ class Tokenizer:
             result.vocab,
             special_tokens=special_tokens,
             base_vocab_size=BASE_VOCAB_SIZE,
+            pretoken_cache_size=pretoken_cache_size,
         )
 
     @staticmethod
@@ -271,27 +302,55 @@ class Tokenizer:
     # ---- Internals ------------------------------------------------------------------
 
     def _encode_chunk_bytes(self, data: bytes) -> list[int]:
+        """BPE-encode one pre-token chunk's raw bytes, memoized.
+
+        Ordinary text repeats the same pre-tokens constantly ("the", "a", common
+        punctuation runs...), so `encode()` calls this once per *occurrence* but the
+        expensive part -- `_encode_chunk_bytes_uncached` -- only actually has to run
+        once per *distinct* chunk, via the per-instance LRU cache built in
+        `__init__`. This is the standard trick tiktoken itself relies on for
+        throughput; see the Fix round 1 section of the task report for the measured
+        speedup. `test_cached_and_uncached_paths_agree` in test_tokenizer.py asserts
+        this cache never changes what gets encoded, only how fast.
+        """
+        return list(self._encode_chunk_cached(data))
+
+    def _encode_chunk_bytes_uncached(self, data: bytes) -> tuple[int, ...]:
         """Greedy lowest-rank-first BPE merge over one pre-token chunk's raw bytes.
 
         Standard algorithm (matches GPT-2's reference encoder / tiktoken): repeatedly
-        find the adjacent pair with the *earliest*-learned merge (lowest rank) still
-        present, and apply it, until no adjacent pair has a known merge left.
+        find the adjacent pair with the lowest merge rank still present anywhere in
+        the sequence, and merge *every* non-overlapping occurrence of exactly that
+        pair (via `merge_word`) before rescanning.
+
+        Merging all occurrences of the winning pair per pass, rather than one
+        occurrence at a time, produces byte-identical output to the naive
+        one-at-a-time version: a merge can only ever introduce pairs built from a
+        token that didn't exist before that merge, and any such new pair therefore
+        has a strictly *later* (higher) rank than the merge that just created it --
+        so nothing a merge produces can ever outrank the merge itself while any of
+        its own occurrences remain unmerged. The one-at-a-time algorithm would thus
+        always reselect the very same pair on every subsequent iteration until no
+        occurrence of it is left; doing them all in one `merge_word` call just skips
+        the redundant rescans. `test_batch_merge_matches_reference_one_at_a_time`
+        checks this equivalence directly against a deliberately naive reference
+        implementation, independent of the cache.
         """
         ids: list[int] = list(data)
+        merge_rank = self._merge_rank
         while len(ids) >= 2:
-            best_idx = -1
+            best_pair: Pair | None = None
             best_rank: int | None = None
-            for i in range(len(ids) - 1):
-                rank = self._merge_rank.get((ids[i], ids[i + 1]))
+            for pair in pairwise(ids):
+                rank = merge_rank.get(pair)
                 if rank is not None and (best_rank is None or rank < best_rank):
                     best_rank = rank
-                    best_idx = i
-            if best_idx == -1:
+                    best_pair = pair
+            if best_pair is None:
                 break
-            pair = (ids[best_idx], ids[best_idx + 1])
-            new_id = self._merge_result_id[pair]
-            ids = [*ids[:best_idx], new_id, *ids[best_idx + 2 :]]
-        return ids
+            new_id = self._merge_result_id[best_pair]
+            ids = merge_word(ids, best_pair, new_id)
+        return tuple(ids)
 
     def _encode_ordinary(self, text: str) -> list[int]:
         """Encode text with no special-token handling at all: every character is

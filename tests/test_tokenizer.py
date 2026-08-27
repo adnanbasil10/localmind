@@ -9,6 +9,7 @@ only for its pure, offline corpus-building helpers.
 from __future__ import annotations
 
 import json
+import random
 from collections import Counter
 
 import pytest
@@ -57,6 +58,17 @@ def training_texts() -> list[str]:
 @pytest.fixture(scope="module")
 def tiny_tokenizer(training_texts: list[str]) -> Tokenizer:
     return Tokenizer.train(training_texts, vocab_size=500, algorithm="incremental")
+
+
+@pytest.fixture(scope="module")
+def uncached_tokenizer(training_texts: list[str]) -> Tokenizer:
+    """Same merges/vocab as `tiny_tokenizer` (identical training call), but with the
+    per-pre-token BPE cache disabled -- the reference for
+    `test_cached_and_uncached_paths_agree*` below (Fix round 1).
+    """
+    return Tokenizer.train(
+        training_texts, vocab_size=500, algorithm="incremental", pretoken_cache_size=0
+    )
 
 
 # --------------------------------------------------------------------------------
@@ -500,6 +512,98 @@ class TestRoundTripProperty:
         surrogates, which `_TRICKY_EXAMPLES` above covers explicitly instead).
         """
         assert tiny_tokenizer.decode(tiny_tokenizer.encode(s)) == s
+
+
+# --------------------------------------------------------------------------------
+# Fix round 1 (perf): per-pre-token memoization + batching all occurrences of the
+# winning merge pair per pass. Both are pure performance changes -- these tests pin
+# down that neither one changes what encode() actually produces.
+# --------------------------------------------------------------------------------
+
+
+class TestEncodeOptimizations:
+    def test_cached_and_uncached_paths_agree(
+        self, tiny_tokenizer: Tokenizer, uncached_tokenizer: Tokenizer
+    ) -> None:
+        assert tiny_tokenizer.merges == uncached_tokenizer.merges  # same training run
+        assert tiny_tokenizer.pretoken_cache_size > 0
+        assert uncached_tokenizer.pretoken_cache_size == 0
+
+        corpus = [
+            *_TRICKY_EXAMPLES,
+            "The quick brown fox jumps over the lazy dog, repeatedly, repeatedly, repeatedly.",
+            "banana bandana banana bandana band band band 123456 123456!",
+            "<|eos|><|bos|><|user|><|assistant|><|tool_call|><|tool_result|><|pad|>",
+            *[f"<|reserved_{i}|> repeated text repeated text" for i in range(16)],
+        ]
+        for s in corpus:
+            assert tiny_tokenizer.encode(s) == uncached_tokenizer.encode(s)
+            assert tiny_tokenizer.encode(
+                s, add_bos=True, add_eos=True
+            ) == uncached_tokenizer.encode(s, add_bos=True, add_eos=True)
+
+        msgs = [
+            {"role": "system", "content": "be helpful"},
+            {"role": "user", "content": "hi <|eos|> there, <|reserved_3|> too"},
+            {"role": "assistant", "content": "hello! banana banana banana"},
+        ]
+        assert tiny_tokenizer.encode_chat(msgs) == uncached_tokenizer.encode_chat(msgs)
+        assert tiny_tokenizer.apply_chat_template(msgs) == uncached_tokenizer.apply_chat_template(
+            msgs
+        )
+
+    @settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+    @given(st.text(max_size=200))
+    def test_cached_and_uncached_paths_agree_hypothesis(
+        self, tiny_tokenizer: Tokenizer, uncached_tokenizer: Tokenizer, s: str
+    ) -> None:
+        """Same hypothesis strategy as the round-trip property test, but here
+        checking cached-vs-uncached agreement rather than decode(encode(s)) == s.
+        """
+        assert tiny_tokenizer.encode(s) == uncached_tokenizer.encode(s)
+
+    def test_batch_merge_matches_reference_one_at_a_time(self, tiny_tokenizer: Tokenizer) -> None:
+        """`_encode_chunk_bytes_uncached` merges *all* occurrences of the winning
+        pair per pass (via `bpe.merge_word`) instead of one occurrence at a time.
+        The method's docstring argues this is always equivalent to the original
+        one-at-a-time algorithm; this test checks that empirically against a
+        deliberately naive one-at-a-time reference kept local to this test, across
+        adversarial repeated-byte patterns and 300 random byte strings.
+        """
+
+        def reference_encode(data: bytes) -> tuple[int, ...]:
+            ids = list(data)
+            while len(ids) >= 2:
+                best_idx = -1
+                best_rank: int | None = None
+                for i in range(len(ids) - 1):
+                    rank = tiny_tokenizer._merge_rank.get((ids[i], ids[i + 1]))
+                    if rank is not None and (best_rank is None or rank < best_rank):
+                        best_rank = rank
+                        best_idx = i
+                if best_idx == -1:
+                    break
+                pair = (ids[best_idx], ids[best_idx + 1])
+                new_id = tiny_tokenizer._merge_result_id[pair]
+                ids = [*ids[:best_idx], new_id, *ids[best_idx + 2 :]]
+            return tuple(ids)
+
+        rng = random.Random(2024)
+        samples = [
+            b"",
+            b"a",
+            b"aaaa",
+            b"aaaaaaaaaaaaaaaa",
+            b"abababababab",
+            b"the quick brown fox jumps over the lazy dog" * 3,
+            "banana bandana banal band 12345 你好世界 😀".encode(),
+        ]
+        for _ in range(300):
+            length = rng.randint(0, 60)
+            samples.append(bytes(rng.randrange(256) for _ in range(length)))
+
+        for data in samples:
+            assert tiny_tokenizer._encode_chunk_bytes_uncached(data) == reference_encode(data)
 
 
 # --------------------------------------------------------------------------------

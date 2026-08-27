@@ -1,0 +1,29 @@
+{
+  "schema_version": "1",
+  "entries": {
+    "golden_sample": {
+      "path": "golden_sample_v1.jsonl",
+      "version": "v1",
+      "kind": "sample",
+      "n_records": 24,
+      "sha256": "cfd57d9f29e99dcc8cbd7ea020e303c46b35aa49f332877aadea97003eb7f077",
+      "description": "Hand-written sample golden set covering every category, including out-of-domain and adversarial-injection."
+    },
+    "corpus_sample": {
+      "path": "corpus_sample_v1.jsonl",
+      "version": "v1",
+      "kind": "corpus",
+      "n_records": 28,
+      "sha256": "32a21baaaf2967b002e44f1405d0ecc6ed5c9c4e4f5ae494959028d38508eb80",
+      "description": "Tiny corpus the sample golden set is grounded in."
+    },
+    "judge_labels": {
+      "path": "judge_labels_v1.jsonl",
+      "version": "v1",
+      "kind": "judge-labels",
+      "n_records": 100,
+      "sha256": "ace603840708ff0216ee1732264851618fabf0e62b2a8aedb096ab9656f3aa5c",
+      "description": "100 labelled pairwise comparisons for judge calibration."
+    }
+  }
+}

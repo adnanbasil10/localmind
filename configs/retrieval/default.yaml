@@ -1,0 +1,20 @@
+# Phase 8 retrieval — minimal default config (localmind.retrieval.RetrievalConfig).
+#
+# Deliberately small: each arm carries its own hyperparameter model with its own defaults
+# (bm25.BM25Config, index.pgvector.HNSWConfig, ...); this file only overrides the handful of
+# values worth tuning from one place. See implementation.md §12 and this task's report
+# (.superpowers/sdd/implementation/task-8-report.md) for what's tuned vs. left at spec defaults.
+
+bm25_k1: 1.5
+bm25_b: 0.75
+
+dense_stage1_dim: 256 # Matryoshka truncation width for stage-1 retrieval; full model dim for stage 2
+
+fusion_rrf_k: 60 # score(d) = sum_arms 1/(k + rank_arm(d)); see docs/decisions/0006-rrf-over-tuned-fusion.md
+
+hnsw_m: 16
+hnsw_ef_construction: 64
+hnsw_ef_search: 40 # tune this; see the recall-vs-latency curve in artifacts/benchmarks/retrieval.json
+
+rerank_candidates: 50 # top-N handed to the reranker
+rerank_top_k: 5 # final top-k returned to the caller
