@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.png binary
+*.bin binary
+*.gguf binary
+*.safetensors binary
+*.ipynb text eol=lf
