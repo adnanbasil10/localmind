@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.git/
+data/
+artifacts/
+checkpoints/
+notebooks/
+frontend/node_modules/
+*.bin
+*.gguf

@@ -1,0 +1,22 @@
+# §8 Phase 4 — main pretrain. Targets 2xT4 on Kaggle (fp16 + GradScaler, NOT bf16).
+model_config: configs/model/31m.yaml
+tokens_per_step: 262144      # global batch via grad accumulation across 2xT4
+micro_batch_size: 16
+seq_len: 1024
+max_tokens: 1_500_000_000
+peak_lr: 3.0e-3              # small models take large LRs
+min_lr_ratio: 0.1            # min_lr = peak/10
+schedule: wsd                # 2% warmup, 80% stable, 18% linear-to-zero decay
+warmup_frac: 0.02
+stable_frac: 0.80
+decay_frac: 0.18
+optimizer: adamw
+betas: [0.9, 0.95]
+weight_decay: 0.1            # excluded on norms/bias/embeddings
+grad_clip: 1.0
+precision: fp16              # T4 is SM7.5: no bf16 tensor cores
+z_loss: 1.0e-4
+torch_compile: default       # max-autotune wastes session time
+ckpt_every_min: 15           # local
+hub_push_every_min: 60       # session-cap insurance
+seed: 1337

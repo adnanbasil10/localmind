@@ -1,0 +1,20 @@
+name: LocalMind-31M
+vocab_size:      16384
+d_model:         512
+n_layers:        8
+n_heads:         8
+n_kv_heads:      2        # GQA, 4:1
+head_dim:        64
+ffn_hidden:      1408     # ~8/3 * d_model, rounded to multiple of 128
+max_seq_len:     1024     # extend to 2048 in a short annealing phase
+rope_theta:      10000.0
+norm:            rmsnorm  # pre-norm
+qk_norm:         true     # load-bearing on fp16 hardware
+activation:      swiglu
+bias:            false
+tie_embeddings:  true
+z_loss:          1.0e-4
+attn_dropout:    0.0      # data-limited, not overfitting
+init_std:        0.02
+# DoD (§6): count_params(cfg, include_norms=False) == 30_932_992
+expected_params: 30932992

@@ -1,0 +1,19 @@
+name: LocalMind-12M-proxy   # §3.2/§8: run every ablation here first, confirm winner at 31M
+vocab_size:      16384
+d_model:         320
+n_layers:        6
+n_heads:         5
+n_kv_heads:      1
+head_dim:        64
+ffn_hidden:      896
+max_seq_len:     1024
+rope_theta:      10000.0
+norm:            rmsnorm
+qk_norm:         true
+activation:      swiglu
+bias:            false
+tie_embeddings:  true
+z_loss:          1.0e-4
+attn_dropout:    0.0
+init_std:        0.02
+expected_params: 11878400
