@@ -1,0 +1,238 @@
+{
+  "id": null,
+  "uid": "localmind-overview",
+  "title": "LocalMind — Overview",
+  "description": "Per-stage latency percentiles, tokens/day, retrieval-quality trend, error/refusal rates, tool success rate, and cache hit rates across the three localmind.cache layers. Sourced from localmind.obs.metrics (Prometheus, scraped per deploy/prometheus.yml, job=localmind-api) and localmind.obs.tracing (OTLP -> Phoenix, http://phoenix:6006). implementation.md SS15.",
+  "tags": ["localmind", "obs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Per-stage latency",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Pipeline stage latency (p50 / p95 / p99)",
+      "description": "One series per pipeline stage (route, embed, bm25, dense, colbert, fuse, rerank, grade, generate, verify) and percentile, from localmind_stage_latency_seconds (Histogram).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 5 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(localmind_stage_latency_seconds_bucket[5m])) by (le, stage))",
+          "legendFormat": "{{stage}} p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum(rate(localmind_stage_latency_seconds_bucket[5m])) by (le, stage))",
+          "legendFormat": "{{stage}} p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum(rate(localmind_stage_latency_seconds_bucket[5m])) by (le, stage))",
+          "legendFormat": "{{stage}} p99"
+        }
+      ],
+      "alert": {
+        "name": "Generate-stage p95 latency high",
+        "message": "p95 latency for the `generate` stage has exceeded 2s for 5 minutes. See docs/runbook.md.",
+        "condition": "B",
+        "frequency": "1m",
+        "for": "5m",
+        "noDataState": "no_data",
+        "executionErrorState": "alerting",
+        "handler": 1,
+        "conditions": [
+          {
+            "evaluator": { "type": "gt", "params": [2] },
+            "operator": { "type": "and" },
+            "query": {
+              "params": [
+                "histogram_quantile(0.95, sum(rate(localmind_stage_latency_seconds_bucket{stage=\"generate\"}[5m])) by (le))",
+                "5m",
+                "now"
+              ]
+            },
+            "reducer": { "type": "last" },
+            "type": "query"
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "row",
+      "title": "Tokens",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Tokens / day",
+      "description": "24h increase of localmind_tokens_total, split by direction (input/output).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (direction) (increase(localmind_tokens_total[1d]))",
+          "legendFormat": "{{direction}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Tokens today so far",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(localmind_tokens_total[24h]))", "legendFormat": "tokens" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Retrieval quality (nightly eval)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Retrieval-quality trend",
+      "description": "localmind_eval_metric{metric_name}, a Gauge written once per run by the nightly eval job (localmind.eval, a different task). This panel only defines how the series is displayed.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "localmind_eval_metric",
+          "legendFormat": "{{metric_name}}"
+        }
+      ],
+      "alert": {
+        "name": "Retrieval-quality eval regression",
+        "message": "retrieval_ndcg_at_10 has dropped more than 5% below its trailing 7-day average. See docs/runbook.md.",
+        "condition": "A",
+        "frequency": "1h",
+        "for": "0m",
+        "noDataState": "no_data",
+        "executionErrorState": "alerting",
+        "handler": 1,
+        "conditions": [
+          {
+            "evaluator": { "type": "lt", "params": [0] },
+            "operator": { "type": "and" },
+            "query": {
+              "params": [
+                "localmind_eval_metric{metric_name=\"retrieval_ndcg_at_10\"} - 0.95 * avg_over_time(localmind_eval_metric{metric_name=\"retrieval_ndcg_at_10\"}[7d])",
+                "5m",
+                "now"
+              ]
+            },
+            "reducer": { "type": "last" },
+            "type": "query"
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Errors, refusals, tool success",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Error rate by stage",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 30 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (stage) (rate(localmind_errors_total[5m]))",
+          "legendFormat": "{{stage}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Refusal rate",
+      "description": "Refusals as a fraction of routed requests.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 30 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(localmind_refusals_total[5m])) / sum(rate(localmind_stage_latency_seconds_count{stage=\"route\"}[5m]))",
+          "legendFormat": "refusal rate"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Tool success rate",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 30 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tool) (rate(localmind_tool_results_total{result=\"success\"}[5m])) / sum by (tool) (rate(localmind_tool_results_total[5m]))",
+          "legendFormat": "{{tool}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Cache hit rates (localmind.cache)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Hit rate by cache layer",
+      "description": "embedding / response / semantic layers owned by localmind.cache; prefix layer owned by localmind.inference.prefix_cache. All four report through the same localmind_cache_requests_total series (layer, result=hit|miss).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 39 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (layer) (rate(localmind_cache_requests_total{result=\"hit\"}[5m])) / sum by (layer) (rate(localmind_cache_requests_total[5m]))",
+          "legendFormat": "{{layer}}"
+        }
+      ]
+    }
+  ]
+}

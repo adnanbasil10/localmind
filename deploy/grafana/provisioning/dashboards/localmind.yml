@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: localmind
+    orgId: 1
+    folder: LocalMind
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

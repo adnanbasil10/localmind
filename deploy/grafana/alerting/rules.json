@@ -1,0 +1,115 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "localmind-slo",
+      "folder": "LocalMind",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "localmind-p95-latency-generate",
+          "title": "Generate-stage p95 latency high",
+          "condition": "C",
+          "for": "5m",
+          "noDataState": "NoData",
+          "execErrState": "Alerting",
+          "annotations": {
+            "summary": "p95 latency for the `generate` pipeline stage has exceeded 2s for 5 minutes.",
+            "description": "See docs/runbook.md for rollback and mitigation steps. Metric: localmind_stage_latency_seconds{stage=\"generate\"} (Histogram, deploy/prometheus.yml job=localmind-api)."
+          },
+          "labels": { "severity": "page", "component": "localmind-api" },
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": { "from": 600, "to": 0 },
+              "datasourceUid": "prometheus",
+              "model": {
+                "refId": "A",
+                "expr": "histogram_quantile(0.95, sum(rate(localmind_stage_latency_seconds_bucket{stage=\"generate\"}[5m])) by (le))",
+                "instant": true
+              }
+            },
+            {
+              "refId": "B",
+              "relativeTimeRange": { "from": 600, "to": 0 },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "B",
+                "type": "reduce",
+                "expression": "A",
+                "reducer": "last"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": { "from": 600, "to": 0 },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": { "type": "gt", "params": [2] }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "uid": "localmind-eval-regression",
+          "title": "Retrieval-quality eval regression vs. 7d baseline",
+          "condition": "C",
+          "for": "0m",
+          "noDataState": "NoData",
+          "execErrState": "Alerting",
+          "annotations": {
+            "summary": "The nightly retrieval-quality eval (retrieval_ndcg_at_10) dropped more than 5% below its trailing 7-day average.",
+            "description": "See docs/runbook.md. Metric: localmind_eval_metric{metric_name=\"retrieval_ndcg_at_10\"} (Gauge, written once per nightly run by localmind.eval)."
+          },
+          "labels": { "severity": "warning", "component": "localmind-eval" },
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": { "from": 604800, "to": 0 },
+              "datasourceUid": "prometheus",
+              "model": {
+                "refId": "A",
+                "expr": "localmind_eval_metric{metric_name=\"retrieval_ndcg_at_10\"} - 0.95 * avg_over_time(localmind_eval_metric{metric_name=\"retrieval_ndcg_at_10\"}[7d])",
+                "instant": true
+              }
+            },
+            {
+              "refId": "B",
+              "relativeTimeRange": { "from": 604800, "to": 0 },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "B",
+                "type": "reduce",
+                "expression": "A",
+                "reducer": "last"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": { "from": 604800, "to": 0 },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": { "type": "lt", "params": [0] }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

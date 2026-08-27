@@ -79,7 +79,12 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_SECURITY_ADMIN_PASSWORD: localmind
     ports: ["3001:3000"]
-    volumes: ["grafana:/var/lib/grafana"]
+    volumes:
+      - grafana:/var/lib/grafana
+      # Without these the dashboards in deploy/grafana/ are never loaded.
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
     deploy:
       resources: { limits: { memory: 300m } }
 
