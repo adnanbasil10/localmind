@@ -1,0 +1,19 @@
+# §16 — free Cloudflare Tunnel for a GPU-backed demo during an interview.
+# Run the full stack locally, expose it publicly for the duration, then stop.
+#
+#   cloudflared tunnel login
+#   cloudflared tunnel create localmind
+#   cloudflared tunnel --config deploy/cloudflared.yml run localmind
+#
+# Note: this publishes a local service to the public internet. Start it deliberately,
+# stop it when the demo ends, and never point it at a stack holding real user data.
+
+tunnel: localmind
+credentials-file: ~/.cloudflared/localmind.json
+
+ingress:
+  - hostname: localmind.<your-domain>.com
+    service: http://localhost:8000
+  - hostname: phoenix-localmind.<your-domain>.com
+    service: http://localhost:6006
+  - service: http_status:404
