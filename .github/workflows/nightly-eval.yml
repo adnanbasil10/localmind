@@ -1,0 +1,21 @@
+# §14 — full generation evals nightly against a cached corpus; regenerates docs/benchmarks.md.
+name: nightly-eval
+on:
+  schedule: [{ cron: "0 3 * * *" }]
+  workflow_dispatch:
+
+jobs:
+  full-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with: { enable-cache: true }
+      - run: uv venv
+      - run: uv pip install -e ".[torch,tok,data,dev]"
+      - name: full eval suite
+        run: uv run python -m localmind.eval.system --full
+      - name: regenerate benchmarks
+        run: uv run python -m localmind.eval.report --regenerate-docs
+      - uses: actions/upload-artifact@v4
+        with: { name: nightly-eval, path: artifacts/ }

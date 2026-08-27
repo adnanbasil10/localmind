@@ -1,0 +1,24 @@
+# §14 — blocks merge on retrieval regression. CPU only, no GPU needed, ~3 min.
+name: eval-gate
+on: [pull_request]
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # need baseline ref for the comparison
+      - uses: astral-sh/setup-uv@v3
+        with: { enable-cache: true }
+      - run: uv venv
+      - run: uv pip install -e ".[torch,tok,dev]"
+      - name: retrieval eval (deterministic, no LLM calls)
+        run: uv run python -m localmind.eval.retrieval --config configs/retrieval/default.yaml
+      - name: regression gate
+        # fails the build if nDCG@10 drops more than 2%
+        run: uv run python -m localmind.eval.report --baseline main --max-regression 0.02
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: artifacts/benchmarks/

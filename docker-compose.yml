@@ -1,0 +1,111 @@
+# §3.4 — profiles so the whole stack never runs at once on a 16 GB laptop.
+#   core (~1.5 GB) | obs (+1.2 GB) | full (+2.5 GB)
+# Phoenix over Langfuse v3 deliberately: Langfuse v3 self-hosted needs
+# ClickHouse + MinIO + Redis + Postgres (~4 GB before tracing anything).
+# OpenSearch is intentionally absent — Postgres FTS / bm25s covers the sparse arm.
+
+name: localmind
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    profiles: [core, obs, full]
+    environment:
+      POSTGRES_USER: localmind
+      POSTGRES_PASSWORD: localmind
+      POSTGRES_DB: localmind
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U localmind -d localmind"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources: { limits: { memory: 1g } }
+
+  redis:
+    image: redis:7-alpine
+    profiles: [core, obs, full]
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources: { limits: { memory: 320m } }
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    profiles: [core, obs, full]
+    environment:
+      LOCALMIND_PG_DSN: postgresql://localmind:localmind@postgres:5432/localmind
+      LOCALMIND_REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://phoenix:4317
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    deploy:
+      resources: { limits: { memory: 1g } }
+
+  # ---- obs profile ----
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    profiles: [obs, full]
+    ports: ["6006:6006", "4317:4317"]   # UI, OTLP gRPC
+    deploy:
+      resources: { limits: { memory: 900m } }
+
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: [obs, full]
+    volumes: ["./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+    deploy:
+      resources: { limits: { memory: 300m } }
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    profiles: [obs, full]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ADMIN_PASSWORD: localmind
+    ports: ["3001:3000"]
+    volumes: ["grafana:/var/lib/grafana"]
+    deploy:
+      resources: { limits: { memory: 300m } }
+
+  # ---- full profile: comparison arms only ----
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: [full]
+    ports: ["6333:6333"]
+    volumes: ["qdrant:/qdrant/storage"]
+    deploy:
+      resources: { limits: { memory: 1g } }
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    profiles: [full]
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    ports: ["5000:5000"]
+    volumes: ["mlflow:/mlflow"]
+    deploy:
+      resources: { limits: { memory: 500m } }
+
+volumes:
+  pgdata:
+  grafana:
+  qdrant:
+  mlflow:
