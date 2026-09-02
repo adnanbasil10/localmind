@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import importlib
 import math
+import subprocess
 import sys
 from pathlib import Path
 
@@ -97,12 +98,18 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def test_import_does_not_pull_in_torch_or_owned_by_other_tasks():
-    assert "torch" not in sys.modules, "a prior import already pulled in torch"
-    import localmind.ingestion  # noqa: F401
-
-    assert "torch" not in sys.modules
-    assert "localmind.model" not in sys.modules
-    assert "localmind.retrieval" not in sys.modules
+    """Must run in a clean subprocess: by the time this test runs inside the
+    full suite, other test modules have already imported torch into THIS
+    interpreter's `sys.modules`, so inspecting it here would measure what some
+    earlier test did, not what `import localmind.ingestion` itself pulls in."""
+    code = (
+        "import sys; import localmind.ingestion; "
+        "assert 'torch' not in sys.modules, 'torch'; "
+        "assert 'localmind.model' not in sys.modules, 'localmind.model'; "
+        "assert 'localmind.retrieval' not in sys.modules, 'localmind.retrieval'"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
 
 
 _INGESTION_ROOT = Path(__file__).resolve().parents[1] / "localmind" / "ingestion"
