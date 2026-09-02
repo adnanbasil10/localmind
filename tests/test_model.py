@@ -650,7 +650,7 @@ def test_doc_ids_must_cover_the_whole_cached_context() -> None:
     _, _, packed, doc_ids = _two_docs()
     with torch.no_grad():
         prefill = model(packed[:, :5], doc_ids=doc_ids[:, :5], use_cache=True)
-    with pytest.raises(ValueError, match="past_len \+ T"):
+    with pytest.raises(ValueError, match=r"past_len \+ T"):
         # Only the new token's id, not the whole context: rejected.
         model(packed[:, 5:6], past_kvs=prefill.kv_caches, doc_ids=doc_ids[:, 5:6])
     with pytest.raises(ValueError, match="doc_ids must be"):

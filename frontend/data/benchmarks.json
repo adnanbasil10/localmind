@@ -1,0 +1,1650 @@
+{
+  "generatedAt": "2026-09-02T10:03:33.121Z",
+  "generatedBy": "frontend/scripts/extract-data.mjs",
+  "modelTrained": false,
+  "provenanceLegend": {
+    "measured": "Real timing or memory on the named machine. Reproducible via just.",
+    "synthetic": "Real code and real measurement, on a synthetic corpus and/or a deterministic stand-in model. The harness is validated; retrieval quality on a real corpus is not.",
+    "not-run": "Requires a GPU, a network, or a trained checkpoint. No value is invented."
+  },
+  "hardware": {
+    "inference": "CPU-only | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | 2 torch thread(s) | Windows 10 | python 3.11.9 | torch 2.13.0+cpu",
+    "model": "CPU | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | 8 torch threads | Windows | torch 2.13.0+cpu",
+    "retrieval": "12-core CPU, no GPU (Windows 10)",
+    "cache": "CPU-only, offline synthetic benchmark (no GPU, no network, no real embedding model)"
+  },
+  "inferenceNotes": [
+    "CPU only. No GPU was available; every number here was measured on the machine named in 'hardware'. The vLLM-on-T4 baseline is NOT RUN and is marked as such rather than estimated.",
+    "Weights are randomly initialised: no pretrained checkpoint exists yet. Systems metrics (tokens/s, TTFT, TPOT, throughput, goodput, memory) are unaffected by weight quality and are real. Quality-dependent metrics (speculative acceptance rate, val BPB) are bracketed and flagged, not presented as predictions.",
+    "torch.set_num_threads is pinned; see the thread_scaling rows for why more threads makes single-token decoding slower.",
+    "Paged attention here gathers blocks into a dense tensor before each forward because localmind/model/attention.py (Phase 2-owned) takes a dense past_kv. Memory results are exact; latency carries a gather overhead a fused paged-attention kernel would not pay.",
+    "No bf16 anywhere. No FlashAttention-2 anywhere.",
+    "The kv_cache_generation rows were re-measured with variants INTERLEAVED inside each (seed, size) cell and a median over 2 repeats per seed. The first run measured each variant in a contiguous block; this laptop's throughput drifts over minutes, so that ordering aliased machine drift onto variant identity and produced a wrong ordering. The superseded blocked-ordering run is kept at artifacts/benchmarks/inference_superseded_blocked_ordering.json.",
+    "The speculative rows were re-measured with a draft model that is genuinely cheaper than the target (same width, 2 of 6 layers). The first run used the target's own config as the draft, so every proposed token cost a full target forward and the draft-model arm lost (0.71x) despite 100% acceptance -- a benchmark-design bug, not a property of speculative decoding."
+  ],
+  "ledger": [
+    {
+      "id": "kv-speedup",
+      "label": "Naive to contiguous KV cache",
+      "value": 7.92373307709516,
+      "format": "x",
+      "status": "measured",
+      "scope": "512 new tokens, 3 seeds, variants interleaved per cell",
+      "note": "Spec expected 10-20x. Reporting what was measured.",
+      "bench": "kv_cache_generation"
+    },
+    {
+      "id": "max-concurrent",
+      "label": "Max concurrent sequences at a 64 MB KV budget",
+      "value": 16.238095238095237,
+      "format": "x",
+      "status": "measured",
+      "scope": "21 to 341 at seq_len 64",
+      "note": "",
+      "bench": "max_concurrent"
+    },
+    {
+      "id": "ext-frag",
+      "label": "External fragmentation, paged allocator",
+      "value": 0,
+      "format": "zero",
+      "status": "measured",
+      "scope": "3 seeds",
+      "note": "Identically zero by construction: every free block is interchangeable, so a free block can always satisfy the next allocation.",
+      "bench": "paged_allocator_measured"
+    },
+    {
+      "id": "prefix-request",
+      "label": "Prefix cache, request hit rate",
+      "value": 0.875,
+      "format": "pct",
+      "status": "measured",
+      "scope": "8 requests, 128-token shared prefix",
+      "note": "Token hit rate 73.7% against a ceiling of 84.2%.",
+      "bench": "prefix_cache"
+    },
+    {
+      "id": "prefix-ttft",
+      "label": "Prefix cache, mean TTFT change",
+      "value": -11.40917619876752,
+      "format": "signed-pct",
+      "status": "measured",
+      "scope": "1053 to 933 ms",
+      "note": "",
+      "bench": "prefix_cache"
+    },
+    {
+      "id": "chunked-prefill",
+      "label": "Chunked prefill, p99 inter-token latency",
+      "value": -48.95876702659375,
+      "format": "signed-pct",
+      "status": "measured",
+      "scope": "431 to 220 ms, chunk 64",
+      "note": "p50 ITL gets worse. The trade is tail latency for median.",
+      "bench": "chunked_prefill"
+    },
+    {
+      "id": "constrained",
+      "label": "Constrained decoding, invalid JSON rate",
+      "value": 0,
+      "format": "pct",
+      "status": "measured",
+      "scope": "100% to 0%, grammar json_object",
+      "note": "50% of generations hit the token budget and were closed deterministically from the FSM state. Counted here, not scored as a valid-JSON win.",
+      "bench": "constrained_decoding"
+    },
+    {
+      "id": "speculative",
+      "label": "n-gram speculative decoding",
+      "value": 1.6845621264773925,
+      "format": "x",
+      "status": "measured",
+      "scope": "greedy sampling, 4 speculative tokens",
+      "note": "Weights are untrained, so acceptance rate is a bracket, not a prediction. The 2-of-6-layer draft-model arm reached 1.34x.",
+      "bench": "speculative"
+    },
+    {
+      "id": "int8",
+      "label": "torch dynamic int8, weight size",
+      "value": 20.518798828125,
+      "format": "mb",
+      "status": "measured",
+      "scope": "fp32 45.8 MB, 12M proxy",
+      "note": "Logit KL vs fp32 3.20e-4.",
+      "bench": "quantization"
+    },
+    {
+      "id": "gguf",
+      "label": "GGUF export, q8_0",
+      "value": 12.35302734375,
+      "format": "mb",
+      "status": "measured",
+      "scope": "artifacts/gguf/localmind-12m-proxy-q8_0.gguf",
+      "note": "Verified against our own reader, never llama.cpp, and lossy: 1 dropped-tensor condition(s). This is the 12M proxy export, not the 31M model.",
+      "bench": "gguf_export"
+    },
+    {
+      "id": "vllm",
+      "label": "vLLM baseline",
+      "value": null,
+      "format": "none",
+      "status": "not-run",
+      "scope": "no CUDA device and no vllm package in this environment (CPU-only laptop)",
+      "note": "LocalMind loses. The gap is kernel fusion, CUDA-graph capture, a real paged-attention kernel (no gather copy), and continuous batching with ragged attention instead of length bucketing.",
+      "bench": "vllm_baseline"
+    }
+  ],
+  "maxConcurrent": {
+    "provenance": "measured",
+    "source": "artifacts/benchmarks/inference.json :: bench=max_concurrent",
+    "hardware": "CPU-only | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | 2 torch thread(s) | Windows 10 | python 3.11.9 | torch 2.13.0+cpu",
+    "budgetMb": 64,
+    "maxSeqLen": 1024,
+    "kvBytesPerToken": 3072,
+    "rows": [
+      {
+        "seqLen": 64,
+        "contiguous": 21,
+        "paged": 341,
+        "gain": 16.238095238095237
+      },
+      {
+        "seqLen": 128,
+        "contiguous": 21,
+        "paged": 170,
+        "gain": 8.095238095238095
+      },
+      {
+        "seqLen": 256,
+        "contiguous": 21,
+        "paged": 85,
+        "gain": 4.0476190476190474
+      },
+      {
+        "seqLen": 512,
+        "contiguous": 21,
+        "paged": 42,
+        "gain": 2
+      }
+    ]
+  },
+  "fragmentation": {
+    "provenance": "measured",
+    "source": "artifacts/benchmarks/inference.json :: bench=fragmentation",
+    "nSequences": 32,
+    "blockSize": 16,
+    "budgetMb": 64,
+    "rows": [
+      {
+        "mix": "uniform_short",
+        "seed": 0,
+        "meanSeqLen": 40.84375,
+        "contiguousWaste": 0.960113525390625,
+        "pagedWaste": 0.14013157894736838,
+        "contiguousExternal": 0.015625,
+        "pagedExternal": 0.000244140625,
+        "contiguousReservedMb": 96,
+        "pagedReservedMb": 4.453125,
+        "amplification": 21.557894736842105
+      },
+      {
+        "mix": "rag_mixed",
+        "seed": 0,
+        "meanSeqLen": 215.75,
+        "contiguousWaste": 0.789306640625,
+        "pagedWaste": 0.014840182648401812,
+        "contiguousExternal": 0.015625,
+        "pagedExternal": 0.000244140625,
+        "contiguousReservedMb": 96,
+        "pagedReservedMb": 20.53125,
+        "amplification": 4.675799086757991
+      },
+      {
+        "mix": "long_tail",
+        "seed": 0,
+        "meanSeqLen": 150.75,
+        "contiguousWaste": 0.852783203125,
+        "pagedWaste": 0.033653846153846145,
+        "contiguousExternal": 0.015625,
+        "pagedExternal": 0.000244140625,
+        "contiguousReservedMb": 96,
+        "pagedReservedMb": 14.625,
+        "amplification": 6.564102564102564
+      },
+      {
+        "mix": "uniform_short",
+        "seed": 1,
+        "meanSeqLen": 38.625,
+        "contiguousWaste": 0.9622802734375,
+        "pagedWaste": 0.15109890109890112,
+        "contiguousExternal": 0.015625,
+        "pagedExternal": 0.000244140625,
+        "contiguousReservedMb": 96,
+        "pagedReservedMb": 4.265625,
+        "amplification": 22.505494505494507
+      },
+      {
+        "mix": "rag_mixed",
+        "seed": 1,
+        "meanSeqLen": 212.5,
+        "contiguousWaste": 0.79248046875,
+        "pagedWaste": 0.0139211136890951,
+        "contiguousExternal": 0.015625,
+        "pagedExternal": 0.000244140625,
+        "contiguousReservedMb": 96,
+        "pagedReservedMb": 20.203125,
+        "amplification": 4.751740139211137
+      },
+      {
+        "mix": "long_tail",
+        "seed": 1,
+        "meanSeqLen": 345,
+        "contiguousWaste": 0.6630859375,
+        "pagedWaste": 0.019886363636363646,
+        "contiguousExternal": 0.015625,
+        "pagedExternal": 0.000244140625,
+        "contiguousReservedMb": 96,
+        "pagedReservedMb": 33,
+        "amplification": 2.909090909090909
+      },
+      {
+        "mix": "uniform_short",
+        "seed": 2,
+        "meanSeqLen": 39.5625,
+        "contiguousWaste": 0.96136474609375,
+        "pagedWaste": 0.16710526315789476,
+        "contiguousExternal": 0.015625,
+        "pagedExternal": 0.000244140625,
+        "contiguousReservedMb": 96,
+        "pagedReservedMb": 4.453125,
+        "amplification": 21.557894736842105
+      },
+      {
+        "mix": "rag_mixed",
+        "seed": 2,
+        "meanSeqLen": 242.25,
+        "contiguousWaste": 0.763427734375,
+        "pagedWaste": 0.011224489795918391,
+        "contiguousExternal": 0.015625,
+        "pagedExternal": 0.000244140625,
+        "contiguousReservedMb": 96,
+        "pagedReservedMb": 22.96875,
+        "amplification": 4.179591836734694
+      },
+      {
+        "mix": "long_tail",
+        "seed": 2,
+        "meanSeqLen": 234.75,
+        "contiguousWaste": 0.770751953125,
+        "pagedWaste": 0.021874999999999978,
+        "contiguousExternal": 0.015625,
+        "pagedExternal": 0.000244140625,
+        "contiguousReservedMb": 96,
+        "pagedReservedMb": 22.5,
+        "amplification": 4.266666666666667
+      }
+    ]
+  },
+  "allocator": {
+    "provenance": "measured",
+    "source": "artifacts/benchmarks/inference.json :: bench=paged_allocator_measured",
+    "externalFragmentation": [
+      0,
+      0,
+      0
+    ],
+    "note": "identically zero by construction: every free block is interchangeable, so a free block can always satisfy the next allocation",
+    "internalRange": [
+      0.09735576923076927,
+      0.10597826086956519
+    ]
+  },
+  "semanticCache": {
+    "provenance": "synthetic",
+    "source": "artifacts/benchmarks/semantic_cache.json",
+    "hardware": "CPU-only, offline synthetic benchmark (no GPU, no network, no real embedding model)",
+    "embedder": "HashingEmbedder (deterministic bag-of-hashed-tokens fake; see module docstring)",
+    "description": "Hit rate vs. false-hit rate as the semantic cache's similarity threshold tau is swept from 0.80 to 0.99, against a hand-authored SYNTHETIC labelled query set (see build_synthetic_queryset() docstring) -- not a real production query log. A false hit is a returned cached answer that does not match the querying user's own ground-truth answer; it is measured directly by comparing answers, not inferred from the similarity score. The query set is deliberately adversarial-weighted (roughly a third of evaluation queries are constructed confusable/ambiguous pairs meant to stress-test the false-hit path) rather than a representative traffic sample, so absolute hit rates here read low and conditional false-hit rates read high compared to what real production traffic -- mostly clean paraphrases and mostly-unrelated misses -- would show. The point of this benchmark is the shape of the tradeoff and the honesty of the measurement, not a hit-rate number to advertise.",
+    "reasoning": "false_hit_rate_of_total flattens to its minimum (~0.042, an irreducible floor from the context-ambiguous exact-duplicate scenario -- see build_synthetic_queryset()) at tau=0.91 and does not improve further at any tighter tau in the sweep, because that residual error comes from a literal cache-key collision (same text, different hidden user context) that a similarity threshold cannot fix by construction. Every tau above 0.91 therefore only trades away hit_rate for zero further safety gain, so 0.91 is chosen as the loosest tau that is exactly as safe as the safest tau. Fixing the remaining floor requires enriching the cache key with session/account context, not moving tau -- a genuine design limitation of a text-only semantic cache key, reported rather than hidden.",
+    "operatingPoint": {
+      "tau": 0.91,
+      "hitRate": 0.125,
+      "falseHitOfTotal": 0.041666666666666664,
+      "falseHitOfHits": 0.3333333333333333,
+      "meetsThreshold": false,
+      "threshold": 0.05,
+      "selectionRule": "min(false_hit_rate_of_total), tie-broken by max(hit_rate)"
+    },
+    "rows": [
+      {
+        "tau": 0.8,
+        "hit": {
+          "mean": 0.5625,
+          "lo": 0.5208333333333334,
+          "hi": 0.5833333333333334,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.19444444444444445,
+          "lo": 0.16666666666666666,
+          "hi": 0.20833333333333334,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.34476190476190477,
+          "lo": 0.32,
+          "hi": 0.35714285714285715,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.81,
+        "hit": {
+          "mean": 0.5208333333333334,
+          "lo": 0.5208333333333334,
+          "hi": 0.5208333333333334,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.16666666666666666,
+          "lo": 0.16666666666666666,
+          "hi": 0.16666666666666666,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.32,
+          "lo": 0.32,
+          "hi": 0.32,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.82,
+        "hit": {
+          "mean": 0.5208333333333334,
+          "lo": 0.5208333333333334,
+          "hi": 0.5208333333333334,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.16666666666666666,
+          "lo": 0.16666666666666666,
+          "hi": 0.16666666666666666,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.32,
+          "lo": 0.32,
+          "hi": 0.32,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.83,
+        "hit": {
+          "mean": 0.48611111111111116,
+          "lo": 0.4791666666666667,
+          "hi": 0.5,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.16666666666666666,
+          "lo": 0.16666666666666666,
+          "hi": 0.16666666666666666,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.3429951690821256,
+          "lo": 0.3333333333333333,
+          "hi": 0.34782608695652173,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.84,
+        "hit": {
+          "mean": 0.47222222222222227,
+          "lo": 0.4583333333333333,
+          "hi": 0.4791666666666667,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.16666666666666666,
+          "lo": 0.16666666666666666,
+          "hi": 0.16666666666666666,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.35309617918313574,
+          "lo": 0.34782608695652173,
+          "hi": 0.3636363636363636,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.85,
+        "hit": {
+          "mean": 0.4305555555555555,
+          "lo": 0.3958333333333333,
+          "hi": 0.4583333333333333,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.16666666666666666,
+          "lo": 0.16666666666666666,
+          "hi": 0.16666666666666666,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.3885471253892307,
+          "lo": 0.3636363636363636,
+          "hi": 0.42105263157894735,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.86,
+        "hit": {
+          "mean": 0.3888888888888889,
+          "lo": 0.3541666666666667,
+          "hi": 0.4166666666666667,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.15277777777777776,
+          "lo": 0.125,
+          "hi": 0.16666666666666666,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.3913312693498452,
+          "lo": 0.35294117647058826,
+          "hi": 0.42105263157894735,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.87,
+        "hit": {
+          "mean": 0.34027777777777773,
+          "lo": 0.3125,
+          "hi": 0.375,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.13888888888888887,
+          "lo": 0.125,
+          "hi": 0.16666666666666666,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.4064814814814815,
+          "lo": 0.375,
+          "hi": 0.4444444444444444,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.88,
+        "hit": {
+          "mean": 0.34027777777777773,
+          "lo": 0.3125,
+          "hi": 0.375,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.13888888888888887,
+          "lo": 0.125,
+          "hi": 0.16666666666666666,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.4064814814814815,
+          "lo": 0.375,
+          "hi": 0.4444444444444444,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.89,
+        "hit": {
+          "mean": 0.20833333333333334,
+          "lo": 0.125,
+          "hi": 0.25,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.08333333333333333,
+          "lo": 0.041666666666666664,
+          "hi": 0.125,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.38888888888888884,
+          "lo": 0.3333333333333333,
+          "hi": 0.5,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.9,
+        "hit": {
+          "mean": 0.16666666666666666,
+          "lo": 0.125,
+          "hi": 0.1875,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.05555555555555555,
+          "lo": 0.041666666666666664,
+          "hi": 0.08333333333333333,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.3333333333333333,
+          "lo": 0.2222222222222222,
+          "hi": 0.4444444444444444,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.91,
+        "hit": {
+          "mean": 0.125,
+          "lo": 0.125,
+          "hi": 0.125,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.041666666666666664,
+          "lo": 0.041666666666666664,
+          "hi": 0.041666666666666664,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.3333333333333333,
+          "lo": 0.3333333333333333,
+          "hi": 0.3333333333333333,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.92,
+        "hit": {
+          "mean": 0.125,
+          "lo": 0.125,
+          "hi": 0.125,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.041666666666666664,
+          "lo": 0.041666666666666664,
+          "hi": 0.041666666666666664,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.3333333333333333,
+          "lo": 0.3333333333333333,
+          "hi": 0.3333333333333333,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.93,
+        "hit": {
+          "mean": 0.125,
+          "lo": 0.125,
+          "hi": 0.125,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.041666666666666664,
+          "lo": 0.041666666666666664,
+          "hi": 0.041666666666666664,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.3333333333333333,
+          "lo": 0.3333333333333333,
+          "hi": 0.3333333333333333,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.94,
+        "hit": {
+          "mean": 0.09027777777777778,
+          "lo": 0.0625,
+          "hi": 0.125,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.041666666666666664,
+          "lo": 0.041666666666666664,
+          "hi": 0.041666666666666664,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.5,
+          "lo": 0.3333333333333333,
+          "hi": 0.6666666666666666,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.95,
+        "hit": {
+          "mean": 0.0625,
+          "lo": 0.0625,
+          "hi": 0.0625,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.041666666666666664,
+          "lo": 0.041666666666666664,
+          "hi": 0.041666666666666664,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.6666666666666666,
+          "lo": 0.6666666666666666,
+          "hi": 0.6666666666666666,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.96,
+        "hit": {
+          "mean": 0.0625,
+          "lo": 0.0625,
+          "hi": 0.0625,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.041666666666666664,
+          "lo": 0.041666666666666664,
+          "hi": 0.041666666666666664,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.6666666666666666,
+          "lo": 0.6666666666666666,
+          "hi": 0.6666666666666666,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.97,
+        "hit": {
+          "mean": 0.0625,
+          "lo": 0.0625,
+          "hi": 0.0625,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.041666666666666664,
+          "lo": 0.041666666666666664,
+          "hi": 0.041666666666666664,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.6666666666666666,
+          "lo": 0.6666666666666666,
+          "hi": 0.6666666666666666,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.98,
+        "hit": {
+          "mean": 0.0625,
+          "lo": 0.0625,
+          "hi": 0.0625,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.041666666666666664,
+          "lo": 0.041666666666666664,
+          "hi": 0.041666666666666664,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.6666666666666666,
+          "lo": 0.6666666666666666,
+          "hi": 0.6666666666666666,
+          "n": 3
+        }
+      },
+      {
+        "tau": 0.99,
+        "hit": {
+          "mean": 0.0625,
+          "lo": 0.0625,
+          "hi": 0.0625,
+          "n": 3
+        },
+        "falseTotal": {
+          "mean": 0.041666666666666664,
+          "lo": 0.041666666666666664,
+          "hi": 0.041666666666666664,
+          "n": 3
+        },
+        "falseOfHits": {
+          "mean": 0.6666666666666666,
+          "lo": 0.6666666666666666,
+          "hi": 0.6666666666666666,
+          "n": 3
+        }
+      }
+    ],
+    "floor": 0.041666666666666664
+  },
+  "retrieval": {
+    "provenance": "synthetic",
+    "source": "artifacts/benchmarks/retrieval.json",
+    "hardware": "12-core CPU, no GPU (Windows 10)",
+    "corpus": {
+      "type": "synthetic",
+      "n_documents": 88,
+      "n_queries": 30,
+      "notes": "Locally-built synthetic corpus (10 topics x canonical/paraphrase/ambiguous docs + 8 multi-aspect docs + 40 filler docs), not a public IR benchmark. Numbers below are real measurements of this repo's code on that corpus, not citations of a standard dataset's leaderboard."
+    },
+    "notes": [
+      "BM25 row uses BM25Index, the from-scratch implementation (see bm25.py's module docstring / this task's ADR note): bm25s is unavailable offline, and using the own implementation keeps every row reproducible without the `rag` extra.",
+      "Dense/SPLADE/ColBERT arms use deterministic fake encoders (no real model weights are downloadable in this environment): DeterministicFakeEmbedder, DeterministicExpansionEncoder, DeterministicFakeMultiVectorEncoder, wrapped with a benchmark-only synonym normalizer so paraphrase/canonical term pairs are treated as similar, standing in for what a trained model would learn from data.",
+      "Cross-encoder reranker is DeterministicFakeCrossEncoder (token-overlap), not a real bge-reranker-v2-m3 checkpoint, for the same offline reason."
+    ],
+    "rows": [
+      {
+        "config": "BM25",
+        "ndcg": {
+          "mean": 0.713330328473407,
+          "lo": 0.657478743711431,
+          "hi": 0.7677255828297954,
+          "n": null
+        },
+        "recall5": {
+          "mean": 0.6011111111111112,
+          "lo": 0.5311018518518519,
+          "hi": 0.6666666666666666,
+          "n": null
+        },
+        "recall20": {
+          "mean": 0.7011111111111111,
+          "lo": 0.6425925925925927,
+          "hi": 0.7533425925925926,
+          "n": null
+        },
+        "p50": {
+          "mean": 0.28609996661543846,
+          "lo": 0.23917245853226632,
+          "hi": 0.30319998040795326,
+          "n": null
+        },
+        "p95": {
+          "mean": 0.5692749749869108,
+          "lo": 0.49070012755692005,
+          "hi": 0.6210399325937032,
+          "n": null
+        }
+      },
+      {
+        "config": "Dense (256d MRL)",
+        "ndcg": {
+          "mean": 0.7445508569261609,
+          "lo": 0.6994763423753068,
+          "hi": 0.7865080830557123,
+          "n": null
+        },
+        "recall5": {
+          "mean": 0.6481481481481481,
+          "lo": 0.5855462962962963,
+          "hi": 0.7133425925925926,
+          "n": null
+        },
+        "recall20": {
+          "mean": 0.8074074074074075,
+          "lo": 0.7662870370370369,
+          "hi": 0.8474259259259261,
+          "n": null
+        },
+        "p50": {
+          "mean": 0.31334999948740005,
+          "lo": 0.29170000925660133,
+          "hi": 0.34959510085172935,
+          "n": null
+        },
+        "p95": {
+          "mean": 0.6857049069367348,
+          "lo": 0.5962001159787178,
+          "hi": 0.7488899980671704,
+          "n": null
+        }
+      },
+      {
+        "config": "Dense (full)",
+        "ndcg": {
+          "mean": 0.8216710791632454,
+          "lo": 0.7838285754584199,
+          "hi": 0.8627177515390074,
+          "n": null
+        },
+        "recall5": {
+          "mean": 0.7400000000000001,
+          "lo": 0.6866388888888889,
+          "hi": 0.7959351851851852,
+          "n": null
+        },
+        "recall20": {
+          "mean": 0.7992592592592591,
+          "lo": 0.7544444444444445,
+          "hi": 0.8440833333333332,
+          "n": null
+        },
+        "p50": {
+          "mean": 0.24695007596164942,
+          "lo": 0.22699986584484577,
+          "hi": 0.2745998790487647,
+          "n": null
+        },
+        "p95": {
+          "mean": 0.5418848828412592,
+          "lo": 0.48837999347597355,
+          "hi": 0.7340450421907007,
+          "n": null
+        }
+      },
+      {
+        "config": "SPLADE",
+        "ndcg": {
+          "mean": 0.8000723440300876,
+          "lo": 0.7581981301117928,
+          "hi": 0.844308483777201,
+          "n": null
+        },
+        "recall5": {
+          "mean": 0.7266666666666666,
+          "lo": 0.6721851851851851,
+          "hi": 0.7837314814814814,
+          "n": null
+        },
+        "recall20": {
+          "mean": 0.7266666666666666,
+          "lo": 0.6721851851851851,
+          "hi": 0.7837314814814814,
+          "n": null
+        },
+        "p50": {
+          "mean": 0.040800077840685844,
+          "lo": 0.03790005575865507,
+          "hi": 0.046366197057068334,
+          "n": null
+        },
+        "p95": {
+          "mean": 0.08943997090682386,
+          "lo": 0.07604449696373192,
+          "hi": 0.12028997298330063,
+          "n": null
+        }
+      },
+      {
+        "config": "ColBERT",
+        "ndcg": {
+          "mean": 0.8602832683273512,
+          "lo": 0.8301815401924906,
+          "hi": 0.8899592536850762,
+          "n": null
+        },
+        "recall5": {
+          "mean": 0.7714814814814813,
+          "lo": 0.725175925925926,
+          "hi": 0.8181481481481481,
+          "n": null
+        },
+        "recall20": {
+          "mean": 0.8488888888888888,
+          "lo": 0.8114629629629629,
+          "hi": 0.8818796296296296,
+          "n": null
+        },
+        "p50": {
+          "mean": 0.8667000802233815,
+          "lo": 0.8161998732248321,
+          "hi": 0.952749978750944,
+          "n": null
+        },
+        "p95": {
+          "mean": 1.776775019243359,
+          "lo": 1.518759923055768,
+          "hi": 2.1724250866100183,
+          "n": null
+        }
+      },
+      {
+        "config": "BM25+Dense (RRF)",
+        "ndcg": {
+          "mean": 0.7848905158077719,
+          "lo": 0.7483846138631092,
+          "hi": 0.8227869890003443,
+          "n": null
+        },
+        "recall5": {
+          "mean": 0.635925925925926,
+          "lo": 0.5799537037037037,
+          "hi": 0.6933703703703703,
+          "n": null
+        },
+        "recall20": {
+          "mean": 0.8537037037037036,
+          "lo": 0.81925,
+          "hi": 0.8881574074074075,
+          "n": null
+        },
+        "p50": {
+          "mean": 0.6465001497417688,
+          "lo": 0.619799830019474,
+          "hi": 0.6986999651417136,
+          "n": null
+        },
+        "p95": {
+          "mean": 1.331990014296025,
+          "lo": 1.2131800426868722,
+          "hi": 1.456339901778847,
+          "n": null
+        }
+      },
+      {
+        "config": "4-arm RRF",
+        "ndcg": {
+          "mean": 0.8175452431932648,
+          "lo": 0.777867994993463,
+          "hi": 0.8587000752192674,
+          "n": null
+        },
+        "recall5": {
+          "mean": 0.7322222222222221,
+          "lo": 0.6777777777777778,
+          "hi": 0.7881574074074073,
+          "n": null
+        },
+        "recall20": {
+          "mean": 0.824074074074074,
+          "lo": 0.7848148148148147,
+          "hi": 0.8634074074074075,
+          "n": null
+        },
+        "p50": {
+          "mean": 1.505599939264357,
+          "lo": 1.4459725673077628,
+          "hi": 1.6260311735095454,
+          "n": null
+        },
+        "p95": {
+          "mean": 3.069585026241839,
+          "lo": 2.669859933666885,
+          "hi": 4.076939926017073,
+          "n": null
+        }
+      },
+      {
+        "config": "4-arm RRF + cross-encoder",
+        "ndcg": {
+          "mean": 0.8571030626323511,
+          "lo": 0.828015252837473,
+          "hi": 0.8853754702534405,
+          "n": null
+        },
+        "recall5": {
+          "mean": 0.7977777777777777,
+          "lo": 0.7611018518518519,
+          "hi": 0.8340833333333333,
+          "n": null
+        },
+        "recall20": {
+          "mean": 0.8381481481481481,
+          "lo": 0.8025925925925926,
+          "hi": 0.8740833333333332,
+          "n": null
+        },
+        "p50": {
+          "mean": 2.08320003002882,
+          "lo": 1.9585001282393932,
+          "hi": 2.3442998062819242,
+          "n": null
+        },
+        "p95": {
+          "mean": 4.171329957898706,
+          "lo": 3.7176599027588964,
+          "hi": 4.309250088408589,
+          "n": null
+        }
+      },
+      {
+        "config": "+ contextual chunks",
+        "ndcg": {
+          "mean": 0.8706352126591633,
+          "lo": 0.844790977366421,
+          "hi": 0.8977871221567756,
+          "n": null
+        },
+        "recall5": {
+          "mean": 0.7977777777777777,
+          "lo": 0.7611018518518519,
+          "hi": 0.8340833333333333,
+          "n": null
+        },
+        "recall20": {
+          "mean": 0.8744444444444445,
+          "lo": 0.8459166666666664,
+          "hi": 0.9033333333333333,
+          "n": null
+        },
+        "p50": {
+          "mean": 2.094249939545989,
+          "lo": 2.024899935349822,
+          "hi": 2.3345500230789185,
+          "n": null
+        },
+        "p95": {
+          "mean": 4.188549960963427,
+          "lo": 3.8215300999581814,
+          "hi": 5.261320431891356,
+          "n": null
+        }
+      }
+    ],
+    "fusion": {
+      "dev_queries": 15,
+      "test_queries": 15,
+      "metric": "nDCG@10",
+      "dev_rrf": 0.79765852620725,
+      "dev_tuned": 0.8764527445346932,
+      "dev_tuned_beat_rrf": true,
+      "best_weights": {
+        "bm25": 0.5,
+        "colbert": 0.25,
+        "dense": 0,
+        "splade": 0
+      },
+      "test_rrf": 0.8212611600302439,
+      "test_tuned": 0.8696782356785112,
+      "test_tuned_beat_rrf": true,
+      "note": "Weights tuned on the dev split; test_* is the held-out number that matters. See docs/decisions/0006-rrf-over-tuned-fusion.md."
+    },
+    "reranking": {
+      "cross_encoder": "DeterministicFakeCrossEncoder (token-overlap heuristic; a real deployment plugs in bge-reranker-v2-m3 via rerank.bge_reranker_v2_m3, unavailable here: no network for model weights)",
+      "ndcg_at_10_gain": 0.03955781943908632,
+      "added_p95_ms": 1.1017449316568673
+    },
+    "contextual": {
+      "recall_at_20_without_context": 0.8381481481481481,
+      "recall_at_20_with_context": 0.8744444444444445,
+      "delta": 0.03629629629629638
+    },
+    "binaryQuantization": {
+      "recall_at_10_full_precision": 1,
+      "recall_at_10_binary_rescored": 0.9466666666666667,
+      "retained_fraction": 0.9466666666666667,
+      "hamming_top_k": 40,
+      "p50_ms": 0.028900103643536568,
+      "p95_ms": 0.04169996827840805,
+      "storage": {
+        "n_pages": 88,
+        "n_vectors": 88,
+        "float32_bytes": 45056,
+        "int8_bytes": 11264,
+        "binary_bytes": 1408,
+        "int8_compression_ratio": 4,
+        "binary_compression_ratio": 32
+      }
+    },
+    "filteredAnn": [
+      {
+        "selectivity": 0.45454545454545453,
+        "post_filter_recall": 1,
+        "pre_filter_recall": 1,
+        "post_filter_latency_ms": 0.2628566464409232,
+        "pre_filter_latency_ms": 0.021329995555182297,
+        "unfiltered_ann_latency_ms": 0.22652999808390936
+      },
+      {
+        "selectivity": 0.11363636363636363,
+        "post_filter_recall": 0.4533333333333334,
+        "pre_filter_recall": 1,
+        "post_filter_latency_ms": 0.2410233486443758,
+        "pre_filter_latency_ms": 0.013106696618100008,
+        "unfiltered_ann_latency_ms": 0.21248667035251856
+      },
+      {
+        "selectivity": 0.011363636363636364,
+        "post_filter_recall": 0.3333333333333333,
+        "pre_filter_recall": 1,
+        "post_filter_latency_ms": 0.2807366428896785,
+        "pre_filter_latency_ms": 0.01191665263225635,
+        "unfiltered_ann_latency_ms": 0.2550199783096711
+      }
+    ],
+    "indexEngine": "SimpleHNSW (from-scratch, index/pgvector.py) standing in for real pgvector, which is not running in this environment; PgVectorIndex issues the equivalent SQL/DDL against a live Postgres+pgvector instance (see @pytest.mark.docker tests) and was not exercised here."
+  },
+  "comparisonMatrix": {
+    "provenance": "not-run",
+    "source": "artifacts/benchmarks/phase5_comparison_matrix.json",
+    "cellsMeasured": 0,
+    "cellsTotal": 24,
+    "columns": [
+      "router_acc",
+      "grader_f1",
+      "rewrite_win_rate",
+      "p50_latency_ms"
+    ],
+    "dodStatus": "not-evaluable",
+    "dodReason": "the DoD compares measured latency and accuracy; these cells have not been run (no GPU, no trained checkpoint)",
+    "hardware": "no GPU and no trained checkpoint available in this environment",
+    "rows": [
+      {
+        "name": "Qwen3-4B, zero-shot prompt",
+        "hardware": "laptop GPU/CPU",
+        "paramsUpdated": "0",
+        "cells": [
+          {
+            "column": "router_acc",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "grader_f1",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "rewrite_win_rate",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "p50_latency_ms",
+            "status": "not-run",
+            "mean": null
+          }
+        ]
+      },
+      {
+        "name": "Qwen3-4B, few-shot prompt",
+        "hardware": "laptop",
+        "paramsUpdated": "0",
+        "cells": [
+          {
+            "column": "router_acc",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "grader_f1",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "rewrite_win_rate",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "p50_latency_ms",
+            "status": "not-run",
+            "mean": null
+          }
+        ]
+      },
+      {
+        "name": "Qwen3-4B + RAG context",
+        "hardware": "laptop",
+        "paramsUpdated": "0",
+        "cells": [
+          {
+            "column": "router_acc",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "grader_f1",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "rewrite_win_rate",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "p50_latency_ms",
+            "status": "not-run",
+            "mean": null
+          }
+        ]
+      },
+      {
+        "name": "Qwen3-4B + LoRA (r=16)",
+        "hardware": "T4, ~2 GPU-h",
+        "paramsUpdated": "~0.1%",
+        "cells": [
+          {
+            "column": "router_acc",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "grader_f1",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "rewrite_win_rate",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "p50_latency_ms",
+            "status": "not-run",
+            "mean": null
+          }
+        ]
+      },
+      {
+        "name": "LocalMind-31M, SFT only",
+        "hardware": "laptop CPU",
+        "paramsUpdated": "100%",
+        "cells": [
+          {
+            "column": "router_acc",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "grader_f1",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "rewrite_win_rate",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "p50_latency_ms",
+            "status": "not-run",
+            "mean": null
+          }
+        ]
+      },
+      {
+        "name": "LocalMind-31M, SFT + KD + GRPO",
+        "hardware": "laptop CPU",
+        "paramsUpdated": "100%",
+        "cells": [
+          {
+            "column": "router_acc",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "grader_f1",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "rewrite_win_rate",
+            "status": "not-run",
+            "mean": null
+          },
+          {
+            "column": "p50_latency_ms",
+            "status": "not-run",
+            "mean": null
+          }
+        ]
+      }
+    ]
+  },
+  "model": {
+    "provenance": "measured",
+    "source": "artifacts/benchmarks/model.json",
+    "hardware": "CPU | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | 8 torch threads | Windows | torch 2.13.0+cpu",
+    "config": {
+      "path": "configs/model/31m.yaml",
+      "name": "LocalMind-31M",
+      "params_excl_norms": 30932992,
+      "params_incl_norms": 30942720
+    },
+    "notes": [
+      "No GPU was available: every number here is CPU. The code paths are the same ones that run on a T4 (SM 7.5).",
+      "'sdpa_efficient' pins EFFICIENT_ATTENTION on CUDA. On CPU that kernel is not registered, so it pins ATen's tiled CPU SDPA kernel (_scaled_dot_product_flash_attention_for_cpu) instead. That is an ATen kernel, NOT the FlashAttention-2 library, which needs SM 8.0+ and is banned repo-wide.",
+      "CPU peak memory is integrated from profiler per-op allocation deltas; total_alloc_bytes is exact, peak_bytes is a running-sum estimate.",
+      "bf16 appears nowhere. fp16 + GradScaler or fp32 only."
+    ],
+    "kvVariants": [
+      {
+        "variant": "MHA",
+        "nKvHeads": 8,
+        "kbPerToken": 16,
+        "mbPerSequence": 32,
+        "contextLen": 2048,
+        "vsMha": 1
+      },
+      {
+        "variant": "GQA(8q/2kv)",
+        "nKvHeads": 2,
+        "kbPerToken": 4,
+        "mbPerSequence": 8,
+        "contextLen": 2048,
+        "vsMha": 4
+      },
+      {
+        "variant": "MQA",
+        "nKvHeads": 1,
+        "kbPerToken": 2,
+        "mbPerSequence": 4,
+        "contextLen": 2048,
+        "vsMha": 8
+      }
+    ],
+    "attnBackends": [
+      {
+        "backend": "naive",
+        "observedKernel": "naive_reference",
+        "seqLen": 512,
+        "latencyMs": {
+          "mean": 36.03586663181583,
+          "lo": 32.60549996048212,
+          "hi": 42.66900010406971,
+          "n": 3
+        },
+        "peakMb": 19.5,
+        "scoreMatrixMb": 8
+      },
+      {
+        "backend": "naive",
+        "observedKernel": "naive_reference",
+        "seqLen": 1024,
+        "latencyMs": {
+          "mean": 87.74049999192357,
+          "lo": 83.10539997182786,
+          "hi": 95.09090008214116,
+          "n": 3
+        },
+        "peakMb": 72,
+        "scoreMatrixMb": 32
+      },
+      {
+        "backend": "naive",
+        "observedKernel": "naive_reference",
+        "seqLen": 2048,
+        "latencyMs": {
+          "mean": 423.7836333923042,
+          "lo": 338.55410013347864,
+          "hi": 468.4331000316888,
+          "n": 3
+        },
+        "peakMb": 276,
+        "scoreMatrixMb": 128
+      },
+      {
+        "backend": "naive",
+        "observedKernel": "naive_reference",
+        "seqLen": 4096,
+        "latencyMs": {
+          "mean": 1416.940800069521,
+          "lo": 1383.9366000611335,
+          "hi": 1472.159800119698,
+          "n": 3
+        },
+        "peakMb": 1080,
+        "scoreMatrixMb": 512
+      },
+      {
+        "backend": "sdpa_math",
+        "observedKernel": "math",
+        "seqLen": 512,
+        "latencyMs": {
+          "mean": 40.98996675262848,
+          "lo": 35.88950005359948,
+          "hi": 49.21570001170039,
+          "n": 3
+        },
+        "peakMb": 5,
+        "scoreMatrixMb": 8
+      },
+      {
+        "backend": "sdpa_math",
+        "observedKernel": "math",
+        "seqLen": 1024,
+        "latencyMs": {
+          "mean": 88.64306666267414,
+          "lo": 81.17519994266331,
+          "hi": 97.61860012076795,
+          "n": 3
+        },
+        "peakMb": 10,
+        "scoreMatrixMb": 32
+      },
+      {
+        "backend": "sdpa_math",
+        "observedKernel": "math",
+        "seqLen": 2048,
+        "latencyMs": {
+          "mean": 259.6597666852176,
+          "lo": 250.71509997360408,
+          "hi": 270.25000005960464,
+          "n": 3
+        },
+        "peakMb": 20,
+        "scoreMatrixMb": 128
+      },
+      {
+        "backend": "sdpa_math",
+        "observedKernel": "math",
+        "seqLen": 4096,
+        "latencyMs": {
+          "mean": 1275.193633356442,
+          "lo": 1219.0522998571396,
+          "hi": 1369.188800221309,
+          "n": 3
+        },
+        "peakMb": 40,
+        "scoreMatrixMb": 512
+      },
+      {
+        "backend": "sdpa_efficient",
+        "observedKernel": "flash_cpu",
+        "seqLen": 512,
+        "latencyMs": {
+          "mean": 38.6071999091655,
+          "lo": 16.720699844881892,
+          "hi": 49.860999919474125,
+          "n": 3
+        },
+        "peakMb": 5,
+        "scoreMatrixMb": 0
+      },
+      {
+        "backend": "sdpa_efficient",
+        "observedKernel": "flash_cpu",
+        "seqLen": 1024,
+        "latencyMs": {
+          "mean": 65.23296671609084,
+          "lo": 43.230999959632754,
+          "hi": 101.80300008505583,
+          "n": 3
+        },
+        "peakMb": 10,
+        "scoreMatrixMb": 0
+      },
+      {
+        "backend": "sdpa_efficient",
+        "observedKernel": "flash_cpu",
+        "seqLen": 2048,
+        "latencyMs": {
+          "mean": 99.09096662886441,
+          "lo": 93.91760011203587,
+          "hi": 106.06109979562461,
+          "n": 3
+        },
+        "peakMb": 20,
+        "scoreMatrixMb": 0
+      },
+      {
+        "backend": "sdpa_efficient",
+        "observedKernel": "flash_cpu",
+        "seqLen": 4096,
+        "latencyMs": {
+          "mean": 256.57273332277936,
+          "lo": 250.70989993400872,
+          "hi": 259.96890012174845,
+          "n": 3
+        },
+        "peakMb": 40,
+        "scoreMatrixMb": 0
+      }
+    ],
+    "throughput": [
+      {
+        "mode": "forward",
+        "tokensPerS": {
+          "mean": 1113.5294980341935,
+          "lo": 919.8723372137248,
+          "hi": 1273.5902589785942,
+          "n": 3
+        },
+        "tflops": {
+          "mean": 0.07823056056435707,
+          "lo": 0.06462525574303665,
+          "hi": 0.08947556401971547,
+          "n": 3
+        },
+        "mfu": 0.252383362687163
+      },
+      {
+        "mode": "forward_backward",
+        "tokensPerS": {
+          "mean": 354.12391268951404,
+          "lo": 348.8851501004442,
+          "hi": 357.4344818957381,
+          "n": 3
+        },
+        "tflops": {
+          "mean": 0.0746364930103363,
+          "lo": 0.0735323516254964,
+          "hi": 0.0753342410769494,
+          "n": 3
+        },
+        "mfu": 0.24078836901122774
+      }
+    ]
+  },
+  "tokenizer": {
+    "provenance": "measured",
+    "source": "artifacts/benchmarks/tokenizer.json",
+    "hardware": "Windows 10 / Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+    "rows": [
+      {
+        "tokenizer": "Yours (Python)",
+        "vocab": 8117,
+        "bytesPerToken": 5.5958,
+        "fertility": 1.1926,
+        "encodeMbS": 4.4838,
+        "error": null
+      },
+      {
+        "tokenizer": "tiktoken cl100k",
+        "vocab": 100277,
+        "bytesPerToken": 5.2527,
+        "fertility": 1.2705,
+        "encodeMbS": 12.5794,
+        "error": null
+      },
+      {
+        "tokenizer": "GPT-2",
+        "vocab": 50257,
+        "bytesPerToken": 4.8776,
+        "fertility": 1.3682,
+        "encodeMbS": 12.791,
+        "error": null
+      }
+    ],
+    "mergeLoop": {
+      "vocab_size": 2048,
+      "naive_seconds": 45.0119,
+      "incremental_seconds": 2.0382,
+      "speedup_x": 22.08
+    },
+    "trainSeconds": 5.96,
+    "trainDocuments": 3214,
+    "note": "Single-run wall clock (no repeated seeds): bootstrap95 CI applies to the later GPU proxy-model ablations that consume this tokenizer, not to these deterministic, seed-independent encode/train measurements. proxy_val_bpb is null on every row -- it needs a GPU proxy-model training run from a later phase."
+  },
+  "judge": {
+    "provenance": "measured",
+    "source": "artifacts/benchmarks/judge_calibration.json",
+    "judge": "heuristic-lexical",
+    "n": 100,
+    "threshold": 0.6,
+    "kappa": {
+      "mean": 0.5908733280881197,
+      "lo": 0.4823193547030151,
+      "hi": 0.702607389685363,
+      "n": 100
+    },
+    "agreement": {
+      "mean": 0.74,
+      "lo": 0.6462901055081282,
+      "hi": 0.8159530153525186,
+      "n": 100
+    },
+    "trusted": false,
+    "suppressed": [
+      "answer_relevance_judged",
+      "faithfulness_judged"
+    ],
+    "verdict": "JUDGE NOT TRUSTED: 'heuristic-lexical' scored kappa=0.591 [0.482, 0.703] < 0.6 on n=100 human labels. Per implementation.md section 14 the judged metrics are suppressed and the harness falls back to deterministic metrics."
+  },
+  "requestPath": [
+    {
+      "node": "route",
+      "label": "Route",
+      "by": "LocalMind-31M",
+      "desc": "Three-way decision: in-domain, out-of-domain, needs-web. Runs on laptop CPU at int8.",
+      "p50Ms": null,
+      "status": "not-run"
+    },
+    {
+      "node": "retrieve",
+      "label": "Retrieve",
+      "by": "BM25 / SPLADE / Dense / ColBERT",
+      "desc": "Four independent ranked lists. Fusion consumes ranks, not scores, so RRF needs no normalisation.",
+      "p50Ms": null,
+      "status": "not-run"
+    },
+    {
+      "node": "grade",
+      "label": "Grade",
+      "by": "LocalMind-31M",
+      "desc": "Per-chunk relevance plus the injection classifier. Flagged chunks are quarantined, never silently dropped.",
+      "p50Ms": null,
+      "status": "not-run"
+    },
+    {
+      "node": "generate",
+      "label": "Generate",
+      "by": "Qwen3-4B-Instruct Q4_K_M via Ollama",
+      "desc": "A 31M model cannot synthesise a grounded answer. The model card says so plainly.",
+      "p50Ms": null,
+      "status": "not-run"
+    },
+    {
+      "node": "verify",
+      "label": "Verify",
+      "by": "claim checker",
+      "desc": "Each claim is matched back to a supporting chunk. Unsupported claims force a regeneration or a refusal.",
+      "p50Ms": null,
+      "status": "not-run"
+    }
+  ]
+}

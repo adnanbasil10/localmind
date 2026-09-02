@@ -7,9 +7,12 @@ __pycache__/
 dist/
 build/
 
-# data & artifacts — never commit corpora, checkpoints, or model binaries
-data/
-checkpoints/
+# data & artifacts — never commit corpora, checkpoints, or model binaries.
+# NOTE the leading slash: a bare `data/` matches ANY directory named data at any
+# depth, which silently swallowed localmind/data/ (the whole Phase 3 package) and
+# frontend/data/. Anchor to the repo root so it only ignores a top-level corpus dir.
+/data/
+/checkpoints/
 artifacts/*
 # ...but DO version the benchmark evidence. docs/benchmarks.md is the deliverable
 # (§18), and a claim whose backing JSON is untracked is a claim with no evidence.

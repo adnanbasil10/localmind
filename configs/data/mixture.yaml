@@ -1,0 +1,62 @@
+# §7 Phase 3 data mixture (implementation.md). Target 1.5B tokens; 3B is the stretch.
+# Every source's license is recorded here and copied into each run's manifest.json --
+# "record every license in docs/model_card.md" (§7): this file is that record's source
+# of truth; the model card is generated from `manifest.json["mixture"]`.
+#
+# Weights sum to 1.0: FineWeb-Edu 50% / Cosmopedia v2 15% / Stack v2 20% / domain 10% / TinyStories 5%.
+seq_len: 1024
+seed: 1337
+allowed_licenses:
+  - ODC-By
+  - Apache-2.0
+  - permissive-only
+  - check-each
+  - CDLA-Sharing-1.0
+
+sources:
+  - name: fineweb_edu
+    weight: 0.50
+    license: ODC-By
+    hf_path: HuggingFaceFW/fineweb-edu
+    hf_name: sample-10BT
+    split: train
+    text_field: text
+
+  - name: cosmopedia_v2
+    weight: 0.15
+    license: Apache-2.0
+    hf_path: HuggingFaceTB/smollm-corpus
+    hf_name: cosmopedia-v2
+    split: train
+    text_field: text
+
+  - name: stack_v2
+    weight: 0.20
+    # The Stack v2 is itself filtered to permissively-licensed repos upstream; treat
+    # "permissive-only" as the recorded license class rather than a single SPDX id,
+    # since it spans many per-file licenses (MIT/Apache-2.0/BSD predominate).
+    license: permissive-only
+    hf_path: bigcode/the-stack-v2
+    hf_name: null
+    split: train
+    text_field: content
+
+  - name: domain_corpus
+    weight: 0.10
+    # The docs LocalMind's RAG system indexes over (framework docs, RFCs, permissively
+    # licensed papers) -- curated per-document, not one HF dataset. hf_path is left
+    # unset so `sources_from_mixture_config` skips it; the caller supplies its own
+    # `SourceSpec` after checking each document's license individually.
+    license: check-each
+    hf_path: null
+    hf_name: null
+    split: null
+    text_field: text
+
+  - name: tinystories
+    weight: 0.05
+    license: CDLA-Sharing-1.0
+    hf_path: roneneldan/TinyStories
+    hf_name: null
+    split: train
+    text_field: text
