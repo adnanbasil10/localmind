@@ -93,7 +93,9 @@ def observed_sdpa_backend(fn: Callable[[], Any]) -> str:
         activities.append(ProfilerActivity.CUDA)
     with profile(activities=activities) as prof:
         fn()
-    names = {evt.name for evt in prof.events()}
+    events = prof.events()
+    assert events is not None, "profiler must have run before events() is read"
+    names = {evt.name for evt in events}
     # Ordered by specificity: a fused kernel marker beats the generic math marker.
     for op, label in _KERNEL_MARKERS.items():
         if op in names:
@@ -134,7 +136,9 @@ def measure_memory(fn: Callable[[], Any], device_type: str = "cpu") -> dict[str,
     running = 0
     peak = 0
     total = 0
-    for evt in prof.events():
+    events = prof.events()
+    assert events is not None, "profiler must have run before events() is read"
+    for evt in events:
         delta = int(getattr(evt, "self_cpu_memory_usage", 0) or 0)
         running += delta
         peak = max(peak, running)

@@ -16,7 +16,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 
@@ -533,7 +533,12 @@ def _scipy_wilcoxon_p(d: np.ndarray) -> float | None:
     except Exception:
         return None
     try:  # pragma: no cover
-        return float(_w(d, zero_method="wilcox", alternative="two-sided").pvalue)
+        result = _w(d, zero_method="wilcox", alternative="two-sided")
+        # scipy wraps `wilcoxon` in an internal axis/nan-policy decorator whose
+        # stub-inferred return type (pyright reports it as class "_") loses the
+        # `pvalue` attribute; the actual runtime object is scipy's WilcoxonResult /
+        # SignificanceResult, which always carries it.
+        return float(cast(Any, result).pvalue)
     except Exception:
         return None
 

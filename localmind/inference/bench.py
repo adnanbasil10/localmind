@@ -886,6 +886,11 @@ def bench_quantization(
                     break
             size.append(float(_weight_bytes(model)))
             prompt = _prompt(cfg, prompt_len, seed)
+            # quantize_dynamic_int8 is annotated -> nn.Module (it wraps torch's own
+            # quantize_dynamic), but with inplace=False it deep-copies and returns an
+            # instance of the same top-level class it was given, so `model` is always
+            # still a LocalMindTransformer here.
+            assert isinstance(model, LocalMindTransformer)
             engine = CachedEngine(model)
             engine.generate(prompt, 2)
             res = engine.generate_detailed(prompt, new_tokens)

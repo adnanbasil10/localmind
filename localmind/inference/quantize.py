@@ -156,6 +156,11 @@ class QuantLinear(nn.Module):
         else:
             q, scale, g = quantize_int4(w, group_size)
         self.group_size = g
+        # Bare declarations so pyright resolves `self.qweight` / `self.scales` to Tensor
+        # at every use site instead of falling back to nn.Module.__getattr__'s
+        # `Tensor | Module` return type (register_buffer alone doesn't give pyright that).
+        self.qweight: Tensor
+        self.scales: Tensor
         self.register_buffer("qweight", q)
         self.register_buffer("scales", scale)
         self.bias = None if linear.bias is None else nn.Parameter(linear.bias.data.clone())

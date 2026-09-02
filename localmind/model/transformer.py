@@ -98,6 +98,10 @@ class LocalMindTransformer(nn.Module):
         if backend not in ATTN_BACKENDS:
             raise ValueError(f"backend must be one of {ATTN_BACKENDS}, got {backend!r}")
         for block in self.blocks:
+            # `self.blocks` is an nn.ModuleList; iterating it statically yields `Module`,
+            # which lacks `set_backend`. Every element really is a TransformerBlock (built
+            # in __init__ above), so narrow it explicitly.
+            assert isinstance(block, TransformerBlock)
             block.set_backend(backend)
 
     def num_params(self, include_norms: bool = False, include_embedding: bool = True) -> int:
