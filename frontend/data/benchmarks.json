@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-02T10:03:33.121Z",
+  "generatedAt": "2026-09-02T17:27:17.371Z",
   "generatedBy": "frontend/scripts/extract-data.mjs",
   "modelTrained": false,
   "provenanceLegend": {
@@ -1543,14 +1543,14 @@
   "tokenizer": {
     "provenance": "measured",
     "source": "artifacts/benchmarks/tokenizer.json",
-    "hardware": "Windows 10 / Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+    "hardware": "Windows 11 (build 26200) / Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
     "rows": [
       {
         "tokenizer": "Yours (Python)",
-        "vocab": 8117,
-        "bytesPerToken": 5.5958,
-        "fertility": 1.1926,
-        "encodeMbS": 4.4838,
+        "vocab": 8592,
+        "bytesPerToken": 5.6145,
+        "fertility": 1.1886,
+        "encodeMbS": 3.6786,
         "error": null
       },
       {
@@ -1558,7 +1558,7 @@
         "vocab": 100277,
         "bytesPerToken": 5.2527,
         "fertility": 1.2705,
-        "encodeMbS": 12.5794,
+        "encodeMbS": 10.973,
         "error": null
       },
       {
@@ -1566,17 +1566,17 @@
         "vocab": 50257,
         "bytesPerToken": 4.8776,
         "fertility": 1.3682,
-        "encodeMbS": 12.791,
+        "encodeMbS": 10.4802,
         "error": null
       }
     ],
     "mergeLoop": {
       "vocab_size": 2048,
-      "naive_seconds": 45.0119,
-      "incremental_seconds": 2.0382,
-      "speedup_x": 22.08
+      "naive_seconds": 46.9249,
+      "incremental_seconds": 2.1066,
+      "speedup_x": 22.28
     },
-    "trainSeconds": 5.96,
+    "trainSeconds": 6.02,
     "trainDocuments": 3214,
     "note": "Single-run wall clock (no repeated seeds): bootstrap95 CI applies to the later GPU proxy-model ablations that consume this tokenizer, not to these deterministic, seed-independent encode/train measurements. proxy_val_bpb is null on every row -- it needs a GPU proxy-model training run from a later phase."
   },

@@ -18,6 +18,7 @@ at module scope, and works with any object (real or fake) that has `encode` and
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -245,7 +246,27 @@ def prepare_shards(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_docs: Iterable[RawDoc] = list(iter_mixture(sources, seed=seed, n_docs=n_docs))
+    def _tick(it: Iterable[RawDoc], every: int = 2000) -> Iterator[RawDoc]:
+        """Stream with a heartbeat.
+
+        Materialising the mixture is the slowest stage and it used to print nothing, so a
+        dead process and a working one looked identical -- a 200k-document build was waited
+        on for three hours after the session had already been reclaimed. One line per
+        `every` documents makes progress and stalls both visible.
+        """
+        t0 = time.monotonic()
+        for i, d in enumerate(it, 1):
+            if i % every == 0:
+                rate = i / max(1e-9, time.monotonic() - t0)
+                print(f"[prepare]   streamed {i:,}/{n_docs:,} docs ({rate:.0f}/s)", flush=True)
+            yield d
+
+    _t0 = time.monotonic()
+    raw_docs: Iterable[RawDoc] = list(_tick(iter_mixture(sources, seed=seed, n_docs=n_docs)))
+    print(
+        f"[prepare]   streamed {len(raw_docs):,} docs in {time.monotonic() - _t0:.0f}s",
+        flush=True,
+    )
 
     docs: Iterable[RawDoc] = raw_docs
     if allowed_licenses is not None:
@@ -253,6 +274,7 @@ def prepare_shards(
     docs = filter_language(docs, allowed_languages)
     docs = filter_quality(docs, quality_thresholds)
     docs = list(docs)
+    print(f"[prepare]   after filters: {len(docs):,} docs", flush=True)
 
     dedup_stats: DedupStats
     if enable_near_dedup:
@@ -261,6 +283,7 @@ def prepare_shards(
         )
     else:
         dedup_stats = DedupStats(total=len(docs), kept=len(docs), removed=0, ratio=0.0)
+    print(f"[prepare]   after dedup: {len(docs):,} docs", flush=True)
 
     docs = list(scrub_docs(docs))
 
