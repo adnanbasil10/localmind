@@ -225,46 +225,73 @@ def bench_naive_vs_cache(
     prompt_len: int,
     new_tokens: Sequence[int],
     include_naive: bool = True,
+    repeats: int = 2,
 ) -> list[dict[str, Any]]:
     """The headline table: tokens/s, TTFT and TPOT for each storage strategy.
 
-    The naive engine is quadratic in total length, so it is swept over the same points as
-    the cached engines and the speedup is reported per point rather than as one number --
-    the speedup *is* a function of sequence length and collapsing it to a scalar hides the
-    mechanism.
+    Two deliberate choices about *how* this is measured, both learned the hard way on this
+    machine:
+
+    1. **Variants are interleaved in the innermost loop.** The first version of this
+       function measured all of naive, then all of contiguous, then all of dynamic. This
+       laptop's throughput drifts by tens of percent over minutes, so any drift mapped
+       directly onto variant identity and produced a confidently wrong ordering. Measuring
+       the variants back-to-back within one (seed, size) cell makes drift common-mode.
+    2. **Median over `repeats` within a seed, then bootstrap over seeds.** The median
+       rejects a single transient stall; the bootstrap over seeds is what CONVENTIONS.md
+       rule 5 asks for. A mean-over-repeats would let one scheduling hiccup move the row.
+
+    The naive engine is swept over the same points as the cached ones and the speedup is
+    reported *per point* rather than as one number -- the speedup is a function of sequence
+    length, and collapsing it to a scalar hides the mechanism.
     """
-    rows: list[dict[str, Any]] = []
-    variants: list[tuple[str, Any]] = [
+    variants: list[tuple[str, Any]] = []
+    if include_naive:
+        variants.append(("naive_no_cache", NaiveEngine))
+    variants += [
         ("contiguous_kv", lambda m: CachedEngine(m, cache="contiguous")),
         ("dynamic_kv", lambda m: CachedEngine(m, cache="dynamic")),
         ("paged_kv", lambda m: PagedEngine(m, num_blocks=256, block_size=DEFAULT_BLOCK_SIZE)),
     ]
-    if include_naive:
-        variants.insert(0, ("naive_no_cache", NaiveEngine))
 
-    baseline: dict[int, float] = {}
-    for name, factory in variants:
+    keys = ("tok_s", "ttft", "tpot", "fwd")
+    acc: dict[tuple[str, int], dict[str, list[float]]] = {
+        (name, n): {k: [] for k in keys} for name, _ in variants for n in new_tokens
+    }
+
+    for seed in seeds:
+        model = _model(cfg, seed)
+        prompt = _prompt(cfg, prompt_len, seed)
         for n_new in new_tokens:
-            tok_s: list[float] = []
-            ttft: list[float] = []
-            tpot: list[float] = []
-            fwd_tokens: list[float] = []
-            for seed in seeds:
-                model = _model(cfg, seed)
-                engine = factory(model)
-                prompt = _prompt(cfg, prompt_len, seed)
-                engine.generate(prompt, 2)  # warmup
-                res = engine.generate_detailed(prompt, n_new)
-                tok_s.append(res.n_generated / res.total_s)
-                ttft.append(res.ttft_s)
-                tpot.append(res.tpot_s)
-                fwd_tokens.append(float(res.tokens_forwarded))
-                del engine, model
+            per_rep: dict[tuple[str, int], dict[str, list[float]]] = {
+                (name, n_new): {k: [] for k in keys} for name, _ in variants
+            }
+            for _ in range(repeats):
+                for name, factory in variants:
+                    engine = factory(model)
+                    engine.generate(prompt, 2)  # warmup this variant's code path
+                    res = engine.generate_detailed(prompt, n_new)
+                    cell = per_rep[(name, n_new)]
+                    cell["tok_s"].append(res.n_generated / res.total_s)
+                    cell["ttft"].append(res.ttft_s)
+                    cell["tpot"].append(res.tpot_s)
+                    cell["fwd"].append(float(res.tokens_forwarded))
+                    del engine
+            for name, _ in variants:
+                for k in keys:
+                    acc[(name, n_new)][k].append(statistics.median(per_rep[(name, n_new)][k]))
+        del model
+
+    rows: list[dict[str, Any]] = []
+    baseline: dict[int, float] = {}
+    for name, _ in variants:
+        for n_new in new_tokens:
+            cell = acc[(name, n_new)]
             per_token = kv_cache_bytes_per_token(cfg, dtype_bytes=4)
             final = prompt_len + n_new
             # Exact KV-storage accounting, not a timing: 'reserved' is the ceiling a
-            # request holds, 'churn' is the total bytes the allocator has to hand out
-            # over the request, which is where the dynamic strategy is quadratic.
+            # request holds, 'churn' is the total bytes the allocator has to hand out over
+            # the request, which is where the dynamic strategy is quadratic.
             reserved = {
                 "naive_no_cache": 0,
                 "dynamic_kv": final * per_token,
@@ -278,17 +305,20 @@ def bench_naive_vs_cache(
                 "prompt_len": prompt_len,
                 "new_tokens": n_new,
                 "total_len": final,
-                "tokens_per_s": summarise_samples(tok_s),
-                "ttft_ms": summarise_samples([t * 1e3 for t in ttft]),
-                "tpot_ms": summarise_samples([t * 1e3 for t in tpot]),
-                "token_positions_forwarded": summarise_samples(fwd_tokens),
+                "repeats_per_seed": repeats,
+                "aggregation": "median over repeats within a seed, bootstrap over seeds",
+                "ordering": "variants interleaved within each (seed, size) cell",
+                "tokens_per_s": summarise_samples(cell["tok_s"]),
+                "ttft_ms": summarise_samples([t * 1e3 for t in cell["ttft"]]),
+                "tpot_ms": summarise_samples([t * 1e3 for t in cell["tpot"]]),
+                "token_positions_forwarded": summarise_samples(cell["fwd"]),
                 "kv_bytes_reserved": reserved,
                 "kv_bytes_allocator_churn": churn,
             }
             if name == "naive_no_cache":
-                baseline[n_new] = statistics.fmean(tok_s)
+                baseline[n_new] = statistics.fmean(cell["tok_s"])
             elif n_new in baseline and baseline[n_new] > 0:
-                row["speedup_vs_naive"] = statistics.fmean(tok_s) / baseline[n_new]
+                row["speedup_vs_naive"] = statistics.fmean(cell["tok_s"]) / baseline[n_new]
             rows.append(row)
     return rows
 
@@ -629,7 +659,7 @@ def bench_speculative(
     prompt_len: int = 96,
     new_tokens: int = 48,
     k: int = 4,
-    draft_config: str | None = "configs/model/12m_proxy.yaml",
+    draft_depth_ratio: int = 3,
 ) -> list[dict[str, Any]]:
     """Acceptance rate and net speedup, for greedy and for temperature sampling.
 
@@ -672,16 +702,25 @@ def bench_speculative(
         proposers: list[tuple[str, Any]] = [
             ("ngram", lambda _m: NgramProposer(max_ngram=4, min_ngram=2)),
         ]
-        if draft_config is not None:
-            draft_cfg = ModelConfig.from_yaml(draft_config)
-            proposers.append(
-                (
-                    "draft_model",
-                    lambda _m, dc=draft_cfg, tp=temp: DraftModelProposer(
-                        _model(dc, 12345), params=SamplingParams(temperature=tp, seed=7)
-                    ),
-                )
+        # The draft must be genuinely CHEAPER than the target or speculation cannot win no
+        # matter how high acceptance goes -- every proposed token costs a draft forward.
+        # Same width (shape constraints: d_model == n_heads * head_dim), 1/draft_depth_ratio
+        # the depth. Derived from the target config rather than hardcoded.
+        draft_cfg = cfg.model_copy(
+            update={
+                "name": f"{cfg.name}-draft-d{max(1, cfg.n_layers // draft_depth_ratio)}",
+                "n_layers": max(1, cfg.n_layers // draft_depth_ratio),
+                "expected_params": None,
+            }
+        )
+        proposers.append(
+            (
+                f"draft_model(L={draft_cfg.n_layers}/{cfg.n_layers})",
+                lambda _m, dc=draft_cfg, tp=temp: DraftModelProposer(
+                    _model(dc, 12345), params=SamplingParams(temperature=tp, seed=7)
+                ),
             )
+        )
         for pname, pfactory in proposers:
             tok_s: list[float] = []
             accept: list[float] = []
@@ -717,6 +756,8 @@ def bench_speculative(
                         statistics.fmean(tok_s) / baseline if baseline else float("nan")
                     ),
                     "above_spec_threshold_0_6": mean_accept >= 0.6,
+                    "draft_layers": draft_cfg.n_layers if pname.startswith("draft") else None,
+                    "target_layers": cfg.n_layers,
                     "weights": "UNTRAINED - see docstring; treat as a bracket, not a prediction",
                 }
             )
