@@ -1,10 +1,14 @@
 # §16 — multi-stage, non-root, small. Target: <500 MB API image.
 #
-# PIN THE BASE DIGESTS BEFORE PRODUCTION USE. §16 asks for pinned digests, and a floating tag
+# PIN THE BASE DIGEST BEFORE PRODUCTION USE. §16 asks for pinned digests, and a floating tag
 # makes "reproduces with one command" false. Resolve the current digest with:
 #     docker buildx imagetools inspect python:3.11-slim-bookworm --format '{{.Manifest.Digest}}'
-# then append `@sha256:<digest>` to both FROM lines below. They are intentionally left unpinned
-# rather than filled with an invented digest, which would simply fail to pull.
+# then append `@sha256:<digest>` to both FROM lines. Left unpinned rather than filled with an
+# invented digest, which would simply fail to pull.
+#
+# The API deliberately installs `[rag,obs]` and NOT torch: `localmind.api.main` imports cleanly
+# without it (verified), because the agent depends on the ControlPlane Protocol rather than on
+# the model package. That keeps this image small. The inference server is a separate concern.
 
 # ---- builder ----
 FROM python:3.11-slim-bookworm AS builder
@@ -13,18 +17,18 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 
-COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
+# uv via pip: version-agnostic and one less registry to depend on than COPY --from an image tag.
+RUN pip install --no-cache-dir uv
 
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY localmind ./localmind
 
-# CPU-only torch: the whole point is that this runs without a GPU.
+# NON-editable on purpose. An editable install writes a finder pointing at /build/localmind, which
+# does not exist in the runtime stage — copying only /opt/venv then ImportErrors on start. A regular
+# install materialises the package inside site-packages, so the venv is self-contained.
 RUN uv venv /opt/venv \
- && VIRTUAL_ENV=/opt/venv uv pip install --no-cache \
-      --index-strategy unsafe-best-match \
-      --extra-index-url https://download.pytorch.org/whl/cpu \
-      -e ".[rag,obs]" \
+ && VIRTUAL_ENV=/opt/venv uv pip install --no-cache ".[rag,obs]" \
  && find /opt/venv -name '__pycache__' -type d -prune -exec rm -rf {} + \
  && find /opt/venv -name '*.pyc' -delete
 
@@ -40,7 +44,8 @@ RUN groupadd --gid 10001 localmind \
 
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
-COPY --chown=10001:10001 localmind ./localmind
+# `localmind` is NOT copied here — it lives in site-packages via the non-editable install above.
+# Copying it would shadow the installed package with an identical tree for no benefit.
 COPY --chown=10001:10001 configs ./configs
 
 USER 10001:10001
@@ -49,4 +54,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=2).status==200 else 1)"
 
+# The production gateway. It starts with no retriever injected and refuses cleanly until one is
+# supplied — see deploy/demo_server.py for a runnable demo with the sample corpus indexed.
 CMD ["uvicorn", "localmind.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
