@@ -42,7 +42,7 @@ distillation and quality tables are scaffolded with every cell marked `not run`.
 | Chunked prefill | **49%** better p99 ITL |
 | Constrained decoding — invalid JSON | **100% → 0%** |
 | n-gram speculative decoding | **1.68×** |
-| 31M export, `q8_0` GGUF | **31.68 MB** |
+| 31M export, `q8_0` GGUF | **33,217,664 B** = 31.68 MiB = 33.22 MB |
 | vLLM baseline | **not run** — no GPU. No number invented. |
 
 ### Retrieval — 88-doc corpus, deterministic stand-in models · *synthetic*
@@ -155,6 +155,11 @@ Kept deliberately, per §20 rule 2:
 - The GGUF export is verified against our own reader, **never llama.cpp**, and is lossy — the
   `llama` architecture has no QK-norm tensors, so export refuses without `allow_lossy=True`.
 - BPE exhausted mergeable pairs at 8,062 of a requested 16,384 vocab on the small corpus.
+- The GGUF files themselves are **not committed** (~90 MB); regenerate with
+  `uv run python -m localmind.inference.quantize --export-gguf`. Only the ~200 KB of benchmark JSON
+  is versioned. An earlier draft of this README quoted "31.68 MB" where the true figure is 31.68
+  **MiB** — corrected above to exact bytes, since "it fits on free CPU tier" is the claim resting
+  on it.
 - An earlier inference benchmark was **discarded** for aliasing machine drift onto variant identity;
   the discredited run is kept as `_run1_blocked.json` so the correction is auditable.
 

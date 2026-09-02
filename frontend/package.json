@@ -1,0 +1,25 @@
+{
+  "name": "localmind-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "extract": "node scripts/extract-data.mjs",
+    "prebuild": "node scripts/extract-data.mjs",
+    "predev": "node scripts/extract-data.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^16.3.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.1",
+    "@types/react": "19.1.13",
+    "@types/react-dom": "19.1.9",
+    "typescript": "5.9.2"
+  }
+}
