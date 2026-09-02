@@ -372,6 +372,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="use a tiny built-in corpus instead of the mixture: no network, seconds not hours",
     )
     ap.add_argument("--no-dedup", action="store_true", help="skip MinHash (needs datasketch)")
+    ap.add_argument(
+        "--exclude",
+        default="",
+        help="comma-separated source names to drop from the mixture, e.g. 'the_stack_v2'. "
+        "Use this when a source is gated on the Hub and you have not accepted its terms. "
+        "Remaining weights are renormalised and the exclusion is recorded in the manifest.",
+    )
     args = ap.parse_args(argv)
 
     from localmind.tokenizer.tokenizer import Tokenizer
@@ -395,6 +402,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         cfg = MixtureConfig.from_yaml(args.mixture)
         sources = sources_from_mixture_config(cfg)
+        dropped = {n.strip() for n in args.exclude.split(",") if n.strip()}
+        if dropped:
+            kept = [s for s in sources if s.name not in dropped]
+            missing = dropped - {s.name for s in sources}
+            if missing:
+                raise SystemExit(f"--exclude names no such source: {sorted(missing)}")
+            if not kept:
+                raise SystemExit("--exclude removed every source")
+            total = sum(s.weight for s in kept)
+            for s in kept:  # renormalise so the remaining shares still sum to 1.0
+                s.weight = s.weight / total
+            print(
+                f"[prepare] excluded {sorted(dropped)}; "
+                f"renormalised {len(kept)} source(s): "
+                + ", ".join(f"{s.name}={s.weight:.3f}" for s in kept)
+            )
+            sources = kept
         seq_len = args.seq_len or cfg.seq_len
         seed = args.seed if args.seed is not None else cfg.seed
         n_docs = args.n_docs
