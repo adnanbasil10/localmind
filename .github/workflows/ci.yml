@@ -32,3 +32,35 @@ jobs:
       - uses: actions/checkout@v4
       - name: validate compose profiles
         run: docker compose config --quiet
+
+  # §16: lint -> typecheck -> test -> build -> push image to GHCR, tagged with the git SHA.
+  # Free for public repos. Only pushes from main; PRs build to verify the Dockerfile still works.
+  image:
+    needs: [quality, compose]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push from main)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.api
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          tags: |
+            ghcr.io/${{ github.repository }}/localmind-api:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/localmind-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -63,13 +63,16 @@ test rather than an assertion.
 
 ### Tokenizer · *measured*
 
+All values below are read directly from `artifacts/benchmarks/tokenizer.json`.
+
 | | Yours | tiktoken cl100k | GPT-2 |
 |---|---|---|---|
-| Bytes/token ↑ | **5.588** | 5.25 | 4.88 |
-| Encode MB/s ↑ | 4.48 | 7.69 | 7.66 |
+| Bytes/token ↑ | **5.5958** | 5.2527 | 4.8776 |
+| Fertility ↓ | **1.1926** | 1.2705 | 1.3682 |
+| Encode MB/s ↑ | 4.4838 | 12.5794 | 12.7910 |
 | Ratio to tiktoken | **2.81×** (DoD: ≤5×) | 1.0× | — |
 
-Merge loop, naive → incremental: **16.9×** (63.85s → 3.78s @ vocab 2048).
+Merge loop, naive → incremental: **22.08×** (45.0119s → 2.0382s @ vocab 2048).
 
 ### Model · *measured*
 
@@ -79,14 +82,18 @@ Merge loop, naive → incremental: **16.9×** (63.85s → 3.78s @ vocab 2048).
 | KV cache | MHA 16 KB/token → **GQA 4:1 = 4 KB/token** |
 | Attention backends | naive / sdpa_math / sdpa_efficient agree to **1e-3** in fp32 |
 | Overfit correctness test | **CE 0.00614** on 100 random sequences, CPU, 140 steps |
-| Doc-boundary masking | packed doc B vs alone: **6e-8** with mask, **0.18** without |
+| Doc-boundary masking | packed doc B vs alone: max-abs-diff **< 1e-3** with mask, **> 1e-3** without — what `tests/test_model.py` actually asserts |
 
 ### Guardrails · *measured*
 
 | | |
 |---|---|
-| Injection block rate, **held-out** paraphrases | **3/8 = 37.5%** ← the honest number |
+| Injection block rate, **held-out** paraphrases | **3/8 = 37.5%**, Wilson 95% CI **[13.7%, 69.4%]** ← the honest number |
 | Injection block rate, in-sample corpus | 41/41 — *in-sample; 4 patterns widened after seeing misses* |
+
+**n = 8.** That interval is far too wide to support any comparison, and it is quoted here rather
+than hidden because the project's own rule 5 forbids a bare point estimate. Treat 37.5% as
+"this defence does not currently generalise", not as a measurement.
 | `calculate` sandbox | **66/66** hostile inputs rejected (`__import__`, `__mro__`, `9**9**9`, …) |
 | Agent termination | 300 seeded fuzzer runs, **all terminate**, 0 hit the step cap |
 
@@ -105,11 +112,20 @@ auto-suppresses judged metrics.
 
 ### Not run — needs a GPU, and says so
 
-Pretraining (1.5B tokens), the WSD scaling-law study, the Muon-vs-AdamW comparison, all four
-post-training stages, the §9 5e comparison matrix (**0 of 24 cells measured**), ColQwen2 indexing,
-and the vLLM baseline. The harnesses exist and are tested; they run the moment a checkpoint does.
-The 5e matrix evaluates to `not-evaluable`, never `failed`, so an unrun experiment can never be
-mistaken for a negative result.
+**Blocked on a GPU:** pretraining (1.5B tokens), the WSD scaling-law study, the Muon-vs-AdamW
+comparison, all four post-training stages, the §9 5e comparison matrix (**0 of 24 cells measured**),
+ColQwen2 indexing, and the vLLM baseline. The harnesses exist and are tested; they run the moment a
+checkpoint does. The 5e matrix evaluates to `not-evaluable`, never `failed`, so an unrun experiment
+can never be mistaken for a negative result.
+
+**Not blocked — simply not run yet.** These need no GPU and are honestly outstanding:
+- §5 DoD says round-trip fuzz over **1M** random Unicode strings; the suite runs **200** hypothesis
+  examples. The property holds on everything tried, but 200 is not 1M.
+- The vocab ablation {4k, 8k, 16k, 32k} has **not** been run. `tokenizer.json` covers one vocabulary.
+  The bytes/token half of that sweep is CPU-only; only the proxy-BPB half needs a GPU.
+  ADR 0003 is marked "Accepted (pending ablation confirmation)" for exactly this reason.
+- The SentencePiece-unigram comparison row (§5's table) is absent, though `sentencepiece` is
+  already declared in the `tok` extra.
 
 ---
 
@@ -161,7 +177,9 @@ Kept deliberately, per §20 rule 2:
   **MiB** — corrected above to exact bytes, since "it fits on free CPU tier" is the claim resting
   on it.
 - An earlier inference benchmark was **discarded** for aliasing machine drift onto variant identity;
-  the discredited run is kept as `_run1_blocked.json` so the correction is auditable.
+  the discredited run is kept as `artifacts/benchmarks/inference_superseded_blocked_ordering.json`
+  so the correction is auditable. Do not read numbers from that file — it is retained as a record of
+  a retraction, not as a result.
 
 ## License
 

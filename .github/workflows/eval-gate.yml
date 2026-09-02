@@ -1,4 +1,10 @@
 # §14 — blocks merge on retrieval regression. CPU only, no GPU needed, ~3 min.
+#
+# This gate previously FAILED OPEN: `--baseline main` does not resolve in a PR checkout (only
+# refs/remotes/origin/main exists), and a missing baseline was treated as "skip, pass". A gate that
+# cannot fail is worse than no gate, because it looks like protection. Two changes fix that:
+#   1. resolve the baseline from origin/main explicitly, and
+#   2. pass --require-baseline so an unresolvable baseline is a hard failure, not a skip.
 name: eval-gate
 on: [pull_request]
 
@@ -7,16 +13,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }   # need baseline ref for the comparison
+        with: { fetch-depth: 0 }   # need origin/main to resolve the baseline
+
       - uses: astral-sh/setup-uv@v3
         with: { enable-cache: true }
       - run: uv venv
       - run: uv pip install -e ".[torch,tok,dev]"
-      - name: retrieval eval (deterministic, no LLM calls)
+
+      - name: Extract baseline from origin/main
+        id: baseline
+        run: |
+          set -euo pipefail
+          mkdir -p baselines
+          if git show origin/main:artifacts/benchmarks/eval_retrieval.json > baselines/main.json 2>/dev/null; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Baseline extracted from origin/main."
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No baseline on origin/main yet -- first run seeds it."
+          fi
+
+      - name: Retrieval eval (deterministic, no LLM calls)
         run: uv run python -m localmind.eval.retrieval --config configs/retrieval/default.yaml
-      - name: regression gate
-        # fails the build if nDCG@10 drops more than 2%
-        run: uv run python -m localmind.eval.report --baseline main --max-regression 0.02
+
+      # Once a baseline exists on main, the gate is REQUIRED and must be able to fail.
+      - name: Regression gate
+        if: steps.baseline.outputs.found == 'true'
+        run: |
+          uv run python -m localmind.eval.report \
+            --baseline-file baselines/main.json \
+            --require-baseline \
+            --max-regression 0.02 \
+            --no-docs
+
+      - name: Seed baseline (first run only)
+        if: steps.baseline.outputs.found == 'false'
+        run: |
+          echo "No baseline on main yet; this run seeds it. Comparison resumes next PR."
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

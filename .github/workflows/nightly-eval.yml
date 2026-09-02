@@ -1,4 +1,8 @@
-# §14 — full generation evals nightly against a cached corpus; regenerates docs/benchmarks.md.
+# §14 — full generation evals nightly; regenerates docs/benchmarks.md.
+#
+# Previously invoked two entrypoints that do not exist: `eval.system --full` (the module requires
+# --records) and `eval.report --regenerate-docs` (not a flag; report regenerates by default and
+# --no-docs suppresses it). The workflow could not start. Commands below match the real CLIs.
 name: nightly-eval
 on:
   schedule: [{ cron: "0 3 * * *" }]
@@ -13,9 +17,24 @@ jobs:
         with: { enable-cache: true }
       - run: uv venv
       - run: uv pip install -e ".[torch,tok,data,dev]"
-      - name: full eval suite
-        run: uv run python -m localmind.eval.system --full
-      - name: regenerate benchmarks
-        run: uv run python -m localmind.eval.report --regenerate-docs
+
+      - name: Retrieval eval
+        run: uv run python -m localmind.eval.retrieval --config configs/retrieval/default.yaml
+
+      # eval.system needs a JSONL of RequestRecord. Nightly replays the captured traffic sample;
+      # if none is committed yet the step is skipped rather than invoking a broken command.
+      - name: System eval (replay captured traffic)
+        run: |
+          set -euo pipefail
+          RECORDS=localmind/eval/datasets/system_records_sample.jsonl
+          if [ -f "$RECORDS" ]; then
+            uv run python -m localmind.eval.system --records "$RECORDS" --out artifacts/benchmarks/system.json
+          else
+            echo "::notice::No system records committed at $RECORDS; skipping system eval."
+          fi
+
+      - name: Regenerate benchmarks.md
+        run: uv run python -m localmind.eval.report --docs docs/benchmarks.md
+
       - uses: actions/upload-artifact@v4
         with: { name: nightly-eval, path: artifacts/ }
