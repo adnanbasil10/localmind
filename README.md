@@ -90,12 +90,16 @@ Merge loop, naive → incremental: **22.08×** (45.0119s → 2.0382s @ vocab 204
 |---|---|
 | Injection block rate, **held-out** paraphrases | **3/8 = 37.5%**, Wilson 95% CI **[13.7%, 69.4%]** ← the honest number |
 | Injection block rate, in-sample corpus | 41/41 — *in-sample; 4 patterns widened after seeing misses* |
+| `calculate` sandbox | **69/69** hostile inputs rejected (`__import__`, `__mro__`, `9**9**9`, `round(2, -10**7)`, fullwidth-dunder, …) |
+| Agent termination | 300 seeded fuzzer runs, **all terminate**, 0 hit the step cap |
 
 **n = 8.** That interval is far too wide to support any comparison, and it is quoted here rather
 than hidden because the project's own rule 5 forbids a bare point estimate. Treat 37.5% as
 "this defence does not currently generalise", not as a measurement.
-| `calculate` sandbox | **69/69** hostile inputs rejected (`__import__`, `__mro__`, `9**9**9`, `round(2, -10**7)`, fullwidth-dunder, …) |
-| Agent termination | 300 seeded fuzzer runs, **all terminate**, 0 hit the step cap |
+
+**On the sandbox:** the 69/69 refusals are pre-execution. CPython's watchdog *cannot* interrupt
+GIL-holding C code — `round(2, -10**7)` returned `ok=True` after 11.05 s under a 1 s cap before the
+guard was added — so containment comes from refusing the expression, never from the timeout.
 
 ### Semantic cache — τ sweep · *synthetic*
 
