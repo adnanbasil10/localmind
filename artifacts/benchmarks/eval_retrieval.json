@@ -1,0 +1,757 @@
+{
+  "name": "retrieval",
+  "hardware": "Windows | 10 | AMD64 | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | 12vCPU | py3.11.9",
+  "seeds": [
+    1234
+  ],
+  "rows": [
+    {
+      "name": "bm25-numpy",
+      "recall@1": {
+        "mean": 0.8571428571428571,
+        "lo": 0.7380952380952381,
+        "hi": 0.9523809523809523,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "recall@5": {
+        "mean": 1.0,
+        "lo": 1.0,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "recall@10": {
+        "mean": 1.0,
+        "lo": 1.0,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "recall@20": {
+        "mean": 1.0,
+        "lo": 1.0,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "ndcg@10": {
+        "mean": 0.9685448370617321,
+        "lo": 0.9171029698783125,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "mrr": {
+        "mean": 0.9682539682539681,
+        "lo": 0.9047619047619045,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "map": {
+        "mean": 0.9523809523809523,
+        "lo": 0.8809523809523809,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "counts": {
+        "questions": 24,
+        "scored": 21,
+        "skipped_unanswerable": 3
+      },
+      "elapsed_s": 0.003454199992120266
+    }
+  ],
+  "ci": "bootstrap95",
+  "detail": {
+    "system": "bm25-numpy",
+    "metrics": {
+      "recall@1": {
+        "mean": 0.8571428571428571,
+        "lo": 0.7380952380952381,
+        "hi": 0.9523809523809523,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "recall@5": {
+        "mean": 1.0,
+        "lo": 1.0,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "recall@10": {
+        "mean": 1.0,
+        "lo": 1.0,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "recall@20": {
+        "mean": 1.0,
+        "lo": 1.0,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "ndcg@10": {
+        "mean": 0.9685448370617321,
+        "lo": 0.9171029698783125,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "mrr": {
+        "mean": 0.9682539682539681,
+        "lo": 0.9047619047619045,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "map": {
+        "mean": 0.9523809523809523,
+        "lo": 0.8809523809523809,
+        "hi": 1.0,
+        "n": 21,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      }
+    },
+    "per_question": {
+      "gs-001": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-002": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-003": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-004": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-005": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-006": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-007": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-008": {
+        "recall@1": 0.5,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-009": {
+        "recall@1": 0.5,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-010": {
+        "recall@1": 0.5,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 0.9197207891481876,
+        "mrr": 1.0,
+        "map": 0.8333333333333333
+      },
+      "gs-011": {
+        "recall@1": 0.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 0.5,
+        "mrr": 0.3333333333333333,
+        "map": 0.3333333333333333
+      },
+      "gs-012": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-013": {
+        "recall@1": 0.5,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 0.9197207891481876,
+        "mrr": 1.0,
+        "map": 0.8333333333333333
+      },
+      "gs-014": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-015": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-016": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-017": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-018": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-022": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-023": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      },
+      "gs-024": {
+        "recall@1": 1.0,
+        "recall@5": 1.0,
+        "recall@10": 1.0,
+        "recall@20": 1.0,
+        "ndcg@10": 1.0,
+        "mrr": 1.0,
+        "map": 1.0
+      }
+    },
+    "counts": {
+      "questions": 24,
+      "scored": 21,
+      "skipped_unanswerable": 3
+    },
+    "by_category": {
+      "adversarial-injection": {
+        "recall@1": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@20": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "ndcg@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "mrr": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "map": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        }
+      },
+      "aggregation": {
+        "recall@1": {
+          "mean": 0.5,
+          "lo": 0.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@20": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "ndcg@10": {
+          "mean": 0.8065735963827292,
+          "lo": 0.5,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "mrr": {
+          "mean": 0.7777777777777777,
+          "lo": 0.3333333333333333,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "map": {
+          "mean": 0.7222222222222222,
+          "lo": 0.3333333333333333,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        }
+      },
+      "factoid": {
+        "recall@1": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 8,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 8,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 8,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@20": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 8,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "ndcg@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 8,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "mrr": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 8,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "map": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 8,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        }
+      },
+      "figure": {
+        "recall@1": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@20": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "ndcg@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "mrr": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "map": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 2,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        }
+      },
+      "multi-hop": {
+        "recall@1": {
+          "mean": 0.5,
+          "lo": 0.5,
+          "hi": 0.5,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@20": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "ndcg@10": {
+          "mean": 0.9732402630493958,
+          "lo": 0.9197207891481876,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "mrr": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "map": {
+          "mean": 0.9444444444444443,
+          "lo": 0.8333333333333334,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        }
+      },
+      "table": {
+        "recall@1": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@5": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "recall@20": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "ndcg@10": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "mrr": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        },
+        "map": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "n": 3,
+          "method": "bootstrap-percentile",
+          "ci_level": 0.95,
+          "seed": 1234
+        }
+      }
+    },
+    "elapsed_s": 0.003454199992120266,
+    "seed": 1234,
+    "dataset": {
+      "name": "golden_sample_v1@v1",
+      "sha256": "cfd57d9f29e99dcc8cbd7ea020e303c46b35aa49f332877aadea97003eb7f077",
+      "granularity": "chunk"
+    }
+  },
+  "config": {
+    "name": "bm25-numpy",
+    "top_k": 20,
+    "ndcg_k": 10,
+    "seed": 1234,
+    "corpus": null,
+    "dataset": null,
+    "runs": null,
+    "bm25_k1": 1.5,
+    "bm25_b": 0.75,
+    "n_resamples": 2000
+  }
+}

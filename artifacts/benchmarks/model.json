@@ -1,0 +1,477 @@
+{
+  "name": "model",
+  "hardware": "CPU | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | 8 torch threads | Windows | torch 2.13.0+cpu",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "rows": [
+    {
+      "bench": "kv_cache",
+      "variant": "MHA",
+      "n_kv_heads": 8,
+      "dtype": "fp16",
+      "bytes_per_token": 16384,
+      "kb_per_token": 16.0,
+      "context_len": 2048,
+      "mb_per_sequence": 32.0,
+      "vs_mha_ratio": 1.0
+    },
+    {
+      "bench": "kv_cache",
+      "variant": "GQA(8q/2kv)",
+      "n_kv_heads": 2,
+      "dtype": "fp16",
+      "bytes_per_token": 4096,
+      "kb_per_token": 4.0,
+      "context_len": 2048,
+      "mb_per_sequence": 8.0,
+      "vs_mha_ratio": 4.0
+    },
+    {
+      "bench": "kv_cache",
+      "variant": "MQA",
+      "n_kv_heads": 1,
+      "dtype": "fp16",
+      "bytes_per_token": 2048,
+      "kb_per_token": 2.0,
+      "context_len": 2048,
+      "mb_per_sequence": 4.0,
+      "vs_mha_ratio": 8.0
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "naive",
+      "observed_kernel": "naive_reference",
+      "seq_len": 512,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 8388608,
+      "oom": false,
+      "latency_ms": {
+        "mean": 36.03586663181583,
+        "std": 4.69125393122167,
+        "ci_low": 32.60549996048212,
+        "ci_high": 42.66900010406971,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 20447232.0,
+        "std": 0.0,
+        "ci_low": 20447232.0,
+        "ci_high": 20447232.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 50798632.0,
+        "std": 0.0,
+        "ci_low": 50798632.0,
+        "ci_high": 50798632.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "naive",
+      "observed_kernel": "naive_reference",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 33554432,
+      "oom": false,
+      "latency_ms": {
+        "mean": 87.74049999192357,
+        "std": 5.256278409463166,
+        "ci_low": 83.10539997182786,
+        "ci_high": 95.09090008214116,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 75497472.0,
+        "std": 0.0,
+        "ci_low": 75497472.0,
+        "ci_high": 75497472.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 169754664.0,
+        "std": 0.0,
+        "ci_low": 169754664.0,
+        "ci_high": 169754664.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "naive",
+      "observed_kernel": "naive_reference",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 134217728,
+      "oom": false,
+      "latency_ms": {
+        "mean": 423.7836333923042,
+        "std": 60.28927493768974,
+        "ci_low": 338.55410013347864,
+        "ci_high": 468.4331000316888,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 289406976.0,
+        "std": 0.0,
+        "ci_low": 289406976.0,
+        "ci_high": 289406976.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 612139048.0,
+        "std": 0.0,
+        "ci_low": 612139048.0,
+        "ci_high": 612139048.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "naive",
+      "observed_kernel": "naive_reference",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 536870912,
+      "oom": false,
+      "latency_ms": {
+        "mean": 1416.940800069521,
+        "std": 39.29339437968257,
+        "ci_low": 1383.9366000611335,
+        "ci_high": 1472.159800119698,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 1132462080.0,
+        "std": 0.0,
+        "ci_low": 1132462080.0,
+        "ci_high": 1132462080.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 2314797096.0,
+        "std": 0.0,
+        "ci_low": 2314797096.0,
+        "ci_high": 2314797096.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "sdpa_math",
+      "observed_kernel": "math",
+      "seq_len": 512,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 8388608,
+      "oom": false,
+      "latency_ms": {
+        "mean": 40.98996675262848,
+        "std": 5.87210181759558,
+        "ci_low": 35.88950005359948,
+        "ci_high": 49.21570001170039,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 5242880.0,
+        "std": 0.0,
+        "ci_low": 5242880.0,
+        "ci_high": 5242880.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 39256100.0,
+        "std": 0.0,
+        "ci_low": 39256100.0,
+        "ci_high": 39256100.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "sdpa_math",
+      "observed_kernel": "math",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 33554432,
+      "oom": false,
+      "latency_ms": {
+        "mean": 88.64306666267414,
+        "std": 6.797114417121637,
+        "ci_low": 81.17519994266331,
+        "ci_high": 97.61860012076795,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 10485760.0,
+        "std": 0.0,
+        "ci_low": 10485760.0,
+        "ci_high": 10485760.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 119406628.0,
+        "std": 0.0,
+        "ci_low": 119406628.0,
+        "ci_high": 119406628.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "sdpa_math",
+      "observed_kernel": "math",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 134217728,
+      "oom": false,
+      "latency_ms": {
+        "mean": 259.6597666852176,
+        "std": 8.059528421842467,
+        "ci_low": 250.71509997360408,
+        "ci_high": 270.25000005960464,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 20971520.0,
+        "std": 0.0,
+        "ci_low": 20971520.0,
+        "ci_high": 20971520.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 402391076.0,
+        "std": 0.0,
+        "ci_low": 402391076.0,
+        "ci_high": 402391076.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "sdpa_math",
+      "observed_kernel": "math",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 536870912,
+      "oom": false,
+      "latency_ms": {
+        "mean": 1275.193633356442,
+        "std": 66.88261712757664,
+        "ci_low": 1219.0522998571396,
+        "ci_high": 1369.188800221309,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 41943040.0,
+        "std": 0.0,
+        "ci_low": 41943040.0,
+        "ci_high": 41943040.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 1459093540.0,
+        "std": 0.0,
+        "ci_low": 1459093540.0,
+        "ci_high": 1459093540.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "sdpa_efficient",
+      "observed_kernel": "flash_cpu",
+      "seq_len": 512,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 0,
+      "oom": false,
+      "latency_ms": {
+        "mean": 38.6071999091655,
+        "std": 15.478169682639143,
+        "ci_low": 16.720699844881892,
+        "ci_high": 49.860999919474125,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 5242880.0,
+        "std": 0.0,
+        "ci_low": 5242880.0,
+        "ci_high": 5242880.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 16859160.0,
+        "std": 0.0,
+        "ci_low": 16859160.0,
+        "ci_high": 16859160.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "sdpa_efficient",
+      "observed_kernel": "flash_cpu",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 0,
+      "oom": false,
+      "latency_ms": {
+        "mean": 65.23296671609084,
+        "std": 26.036400459010828,
+        "ci_low": 43.230999959632754,
+        "ci_high": 101.80300008505583,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 10485760.0,
+        "std": 0.0,
+        "ci_low": 10485760.0,
+        "ci_high": 10485760.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 36085784.0,
+        "std": 0.0,
+        "ci_low": 36085784.0,
+        "ci_high": 36085784.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "sdpa_efficient",
+      "observed_kernel": "flash_cpu",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 0,
+      "oom": false,
+      "latency_ms": {
+        "mean": 99.09096662886441,
+        "std": 5.117774512230877,
+        "ci_low": 93.91760011203587,
+        "ci_high": 106.06109979562461,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 20971520.0,
+        "std": 0.0,
+        "ci_low": 20971520.0,
+        "ci_high": 20971520.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 67436568.0,
+        "std": 0.0,
+        "ci_low": 67436568.0,
+        "ci_high": 67436568.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "attn_backend",
+      "backend": "sdpa_efficient",
+      "observed_kernel": "flash_cpu",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "dtype": "float32",
+      "score_matrix_bytes_analytic": 0,
+      "oom": false,
+      "latency_ms": {
+        "mean": 256.57273332277936,
+        "std": 4.16298003582957,
+        "ci_low": 250.70989993400872,
+        "ci_high": 259.96890012174845,
+        "n": 3
+      },
+      "peak_bytes": {
+        "mean": 41943040.0,
+        "std": 0.0,
+        "ci_low": 41943040.0,
+        "ci_high": 41943040.0,
+        "n": 3
+      },
+      "total_alloc_bytes": {
+        "mean": 130138136.0,
+        "std": 0.0,
+        "ci_low": 130138136.0,
+        "ci_high": 130138136.0,
+        "n": 3
+      }
+    },
+    {
+      "bench": "throughput",
+      "mode": "forward",
+      "batch_size": 2,
+      "seq_len": 512,
+      "flops_per_iter": 71940702208,
+      "tflops": {
+        "mean": 0.07823056056435707,
+        "std": 0.010281463004362577,
+        "ci_low": 0.06462525574303665,
+        "ci_high": 0.08947556401971547,
+        "n": 3
+      },
+      "tokens_per_s": {
+        "mean": 1113.5294980341935,
+        "std": 146.34577913942732,
+        "ci_low": 919.8723372137248,
+        "ci_high": 1273.5902589785942,
+        "n": 3
+      },
+      "device_peak_tflops_measured": 0.3099671853620806,
+      "mfu_vs_measured_device_peak": 0.252383362687163,
+      "mfu_denominator": "empirically measured fp32 dense-matmul roofline of THIS CPU, not a GPU datasheet number; a T4 MFU requires CUDA and is gpu-marked"
+    },
+    {
+      "bench": "throughput",
+      "mode": "forward_backward",
+      "batch_size": 2,
+      "seq_len": 512,
+      "flops_per_iter": 215822106624,
+      "tflops": {
+        "mean": 0.0746364930103363,
+        "std": 0.0007897544114634368,
+        "ci_low": 0.0735323516254964,
+        "ci_high": 0.0753342410769494,
+        "n": 3
+      },
+      "tokens_per_s": {
+        "mean": 354.12391268951404,
+        "std": 3.747106957617965,
+        "ci_low": 348.8851501004442,
+        "ci_high": 357.4344818957381,
+        "n": 3
+      },
+      "device_peak_tflops_measured": 0.3099671853620806,
+      "mfu_vs_measured_device_peak": 0.24078836901122774,
+      "mfu_denominator": "empirically measured fp32 dense-matmul roofline of THIS CPU, not a GPU datasheet number; a T4 MFU requires CUDA and is gpu-marked"
+    }
+  ],
+  "ci": "bootstrap95",
+  "config": {
+    "path": "configs/model/31m.yaml",
+    "name": "LocalMind-31M",
+    "params_excl_norms": 30932992,
+    "params_incl_norms": 30942720
+  },
+  "notes": [
+    "No GPU was available: every number here is CPU. The code paths are the same ones that run on a T4 (SM 7.5).",
+    "'sdpa_efficient' pins EFFICIENT_ATTENTION on CUDA. On CPU that kernel is not registered, so it pins ATen's tiled CPU SDPA kernel (_scaled_dot_product_flash_attention_for_cpu) instead. That is an ATen kernel, NOT the FlashAttention-2 library, which needs SM 8.0+ and is banned repo-wide.",
+    "CPU peak memory is integrated from profiler per-op allocation deltas; total_alloc_bytes is exact, peak_bytes is a running-sum estimate.",
+    "bf16 appears nowhere. fp16 + GradScaler or fp32 only."
+  ]
+}

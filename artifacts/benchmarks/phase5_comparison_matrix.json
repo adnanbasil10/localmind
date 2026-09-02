@@ -1,0 +1,259 @@
+{
+  "cells_measured": 0,
+  "cells_total": 24,
+  "ci": "bootstrap95",
+  "columns": [
+    "router_acc",
+    "grader_f1",
+    "rewrite_win_rate",
+    "p50_latency_ms"
+  ],
+  "complete": false,
+  "dod": {
+    "missing_cells": [
+      "LocalMind-31M, SFT + KD + GRPO/p50_latency_ms",
+      "Qwen3-4B, zero-shot prompt/p50_latency_ms",
+      "LocalMind-31M, SFT + KD + GRPO/router_acc",
+      "Qwen3-4B, zero-shot prompt/router_acc",
+      "LocalMind-31M, SFT + KD + GRPO/grader_f1",
+      "Qwen3-4B, zero-shot prompt/grader_f1",
+      "LocalMind-31M, SFT + KD + GRPO/rewrite_win_rate",
+      "Qwen3-4B, zero-shot prompt/rewrite_win_rate"
+    ],
+    "reason": "the DoD compares measured latency and accuracy; these cells have not been run (no GPU, no trained checkpoint)",
+    "status": "not-evaluable"
+  },
+  "hardware": "no GPU and no trained checkpoint available in this environment",
+  "name": "phase5_comparison_matrix",
+  "rows": [
+    {
+      "complete": false,
+      "grader_f1": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "hardware": "laptop GPU/CPU",
+      "name": "Qwen3-4B, zero-shot prompt",
+      "p50_latency_ms": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "params_updated": "0",
+      "rewrite_win_rate": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "router_acc": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      }
+    },
+    {
+      "complete": false,
+      "grader_f1": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "hardware": "laptop",
+      "name": "Qwen3-4B, few-shot prompt",
+      "p50_latency_ms": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "params_updated": "0",
+      "rewrite_win_rate": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "router_acc": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      }
+    },
+    {
+      "complete": false,
+      "grader_f1": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "hardware": "laptop",
+      "name": "Qwen3-4B + RAG context",
+      "p50_latency_ms": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "params_updated": "0",
+      "rewrite_win_rate": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "router_acc": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      }
+    },
+    {
+      "complete": false,
+      "grader_f1": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "hardware": "T4, ~2 GPU-h",
+      "name": "Qwen3-4B + LoRA (r=16)",
+      "p50_latency_ms": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "params_updated": "~0.1%",
+      "rewrite_win_rate": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "router_acc": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      }
+    },
+    {
+      "complete": false,
+      "grader_f1": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "hardware": "laptop CPU",
+      "name": "LocalMind-31M, SFT only",
+      "p50_latency_ms": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "params_updated": "100%",
+      "rewrite_win_rate": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "router_acc": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      }
+    },
+    {
+      "complete": false,
+      "grader_f1": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "hardware": "laptop CPU",
+      "name": "LocalMind-31M, SFT + KD + GRPO",
+      "p50_latency_ms": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "params_updated": "100%",
+      "rewrite_win_rate": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      },
+      "router_acc": {
+        "hi": null,
+        "lo": null,
+        "mean": null,
+        "n_seeds": 0,
+        "note": "",
+        "status": "not-run"
+      }
+    }
+  ],
+  "seeds": []
+}

@@ -1,0 +1,47 @@
+{
+  "name": "tokenizer",
+  "hardware": "Windows 10 / Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "seeds": [
+    1234
+  ],
+  "rows": [
+    {
+      "tokenizer": "Yours (Python)",
+      "vocab": 8117,
+      "bytes_per_token": 5.5958,
+      "fertility": 1.1926,
+      "encode_mb_s": 4.4838,
+      "proxy_val_bpb": null,
+      "error": null
+    },
+    {
+      "tokenizer": "tiktoken cl100k",
+      "vocab": 100277,
+      "bytes_per_token": 5.2527,
+      "fertility": 1.2705,
+      "encode_mb_s": 12.5794,
+      "proxy_val_bpb": null,
+      "error": null
+    },
+    {
+      "tokenizer": "GPT-2",
+      "vocab": 50257,
+      "bytes_per_token": 4.8776,
+      "fertility": 1.3682,
+      "encode_mb_s": 12.791,
+      "proxy_val_bpb": null,
+      "error": null
+    }
+  ],
+  "ci": "bootstrap95",
+  "notes": "Single-run wall clock (no repeated seeds): bootstrap95 CI applies to the later GPU proxy-model ablations that consume this tokenizer, not to these deterministic, seed-independent encode/train measurements. proxy_val_bpb is null on every row -- it needs a GPU proxy-model training run from a later phase.",
+  "merge_loop_benchmark": {
+    "vocab_size": 2048,
+    "naive_seconds": 45.0119,
+    "incremental_seconds": 2.0382,
+    "speedup_x": 22.08
+  },
+  "tokenizer_train_seconds": 5.96,
+  "eval_text_bytes": 60390,
+  "train_documents": 3214
+}

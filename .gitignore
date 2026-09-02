@@ -7,10 +7,15 @@ __pycache__/
 dist/
 build/
 
-# data & artifacts — never commit corpora or checkpoints
+# data & artifacts — never commit corpora, checkpoints, or model binaries
 data/
-artifacts/
 checkpoints/
+artifacts/*
+# ...but DO version the benchmark evidence. docs/benchmarks.md is the deliverable
+# (§18), and a claim whose backing JSON is untracked is a claim with no evidence.
+# These are ~200 KB of JSON; the GGUF exports next to them are ~90 MB and stay out.
+!artifacts/benchmarks/
+!artifacts/benchmarks/**
 *.bin
 *.idx
 *.safetensors

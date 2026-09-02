@@ -1,0 +1,647 @@
+{
+  "name": "semantic_cache_tau_sweep",
+  "hardware": "CPU-only, offline synthetic benchmark (no GPU, no network, no real embedding model)",
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "rows": [
+    {
+      "name": "tau=0.80",
+      "hit_rate": {
+        "mean": 0.5625,
+        "lo": 0.5208333333333334,
+        "hi": 0.5833333333333334,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.34476190476190477,
+        "lo": 0.32,
+        "hi": 0.35714285714285715,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.19444444444444445,
+        "lo": 0.16666666666666666,
+        "hi": 0.20833333333333334,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.8
+    },
+    {
+      "name": "tau=0.81",
+      "hit_rate": {
+        "mean": 0.5208333333333334,
+        "lo": 0.5208333333333334,
+        "hi": 0.5208333333333334,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.32,
+        "lo": 0.32,
+        "hi": 0.32,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.16666666666666666,
+        "lo": 0.16666666666666666,
+        "hi": 0.16666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.81
+    },
+    {
+      "name": "tau=0.82",
+      "hit_rate": {
+        "mean": 0.5208333333333334,
+        "lo": 0.5208333333333334,
+        "hi": 0.5208333333333334,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.32,
+        "lo": 0.32,
+        "hi": 0.32,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.16666666666666666,
+        "lo": 0.16666666666666666,
+        "hi": 0.16666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.82
+    },
+    {
+      "name": "tau=0.83",
+      "hit_rate": {
+        "mean": 0.48611111111111116,
+        "lo": 0.4791666666666667,
+        "hi": 0.5,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.3429951690821256,
+        "lo": 0.3333333333333333,
+        "hi": 0.34782608695652173,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.16666666666666666,
+        "lo": 0.16666666666666666,
+        "hi": 0.16666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.83
+    },
+    {
+      "name": "tau=0.84",
+      "hit_rate": {
+        "mean": 0.47222222222222227,
+        "lo": 0.4583333333333333,
+        "hi": 0.4791666666666667,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.35309617918313574,
+        "lo": 0.34782608695652173,
+        "hi": 0.3636363636363636,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.16666666666666666,
+        "lo": 0.16666666666666666,
+        "hi": 0.16666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.84
+    },
+    {
+      "name": "tau=0.85",
+      "hit_rate": {
+        "mean": 0.4305555555555555,
+        "lo": 0.3958333333333333,
+        "hi": 0.4583333333333333,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.3885471253892307,
+        "lo": 0.3636363636363636,
+        "hi": 0.42105263157894735,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.16666666666666666,
+        "lo": 0.16666666666666666,
+        "hi": 0.16666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.85
+    },
+    {
+      "name": "tau=0.86",
+      "hit_rate": {
+        "mean": 0.3888888888888889,
+        "lo": 0.3541666666666667,
+        "hi": 0.4166666666666667,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.3913312693498452,
+        "lo": 0.35294117647058826,
+        "hi": 0.42105263157894735,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.15277777777777776,
+        "lo": 0.125,
+        "hi": 0.16666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.86
+    },
+    {
+      "name": "tau=0.87",
+      "hit_rate": {
+        "mean": 0.34027777777777773,
+        "lo": 0.3125,
+        "hi": 0.375,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.4064814814814815,
+        "lo": 0.375,
+        "hi": 0.4444444444444444,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.13888888888888887,
+        "lo": 0.125,
+        "hi": 0.16666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.87
+    },
+    {
+      "name": "tau=0.88",
+      "hit_rate": {
+        "mean": 0.34027777777777773,
+        "lo": 0.3125,
+        "hi": 0.375,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.4064814814814815,
+        "lo": 0.375,
+        "hi": 0.4444444444444444,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.13888888888888887,
+        "lo": 0.125,
+        "hi": 0.16666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.88
+    },
+    {
+      "name": "tau=0.89",
+      "hit_rate": {
+        "mean": 0.20833333333333334,
+        "lo": 0.125,
+        "hi": 0.25,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.38888888888888884,
+        "lo": 0.3333333333333333,
+        "hi": 0.5,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.08333333333333333,
+        "lo": 0.041666666666666664,
+        "hi": 0.125,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.89
+    },
+    {
+      "name": "tau=0.90",
+      "hit_rate": {
+        "mean": 0.16666666666666666,
+        "lo": 0.125,
+        "hi": 0.1875,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.3333333333333333,
+        "lo": 0.2222222222222222,
+        "hi": 0.4444444444444444,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.05555555555555555,
+        "lo": 0.041666666666666664,
+        "hi": 0.08333333333333333,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.9
+    },
+    {
+      "name": "tau=0.91",
+      "hit_rate": {
+        "mean": 0.125,
+        "lo": 0.125,
+        "hi": 0.125,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.3333333333333333,
+        "lo": 0.3333333333333333,
+        "hi": 0.3333333333333333,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.041666666666666664,
+        "lo": 0.041666666666666664,
+        "hi": 0.041666666666666664,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.91
+    },
+    {
+      "name": "tau=0.92",
+      "hit_rate": {
+        "mean": 0.125,
+        "lo": 0.125,
+        "hi": 0.125,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.3333333333333333,
+        "lo": 0.3333333333333333,
+        "hi": 0.3333333333333333,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.041666666666666664,
+        "lo": 0.041666666666666664,
+        "hi": 0.041666666666666664,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.92
+    },
+    {
+      "name": "tau=0.93",
+      "hit_rate": {
+        "mean": 0.125,
+        "lo": 0.125,
+        "hi": 0.125,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.3333333333333333,
+        "lo": 0.3333333333333333,
+        "hi": 0.3333333333333333,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.041666666666666664,
+        "lo": 0.041666666666666664,
+        "hi": 0.041666666666666664,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.93
+    },
+    {
+      "name": "tau=0.94",
+      "hit_rate": {
+        "mean": 0.09027777777777778,
+        "lo": 0.0625,
+        "hi": 0.125,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.5,
+        "lo": 0.3333333333333333,
+        "hi": 0.6666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.041666666666666664,
+        "lo": 0.041666666666666664,
+        "hi": 0.041666666666666664,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.94
+    },
+    {
+      "name": "tau=0.95",
+      "hit_rate": {
+        "mean": 0.0625,
+        "lo": 0.0625,
+        "hi": 0.0625,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.6666666666666666,
+        "lo": 0.6666666666666666,
+        "hi": 0.6666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.041666666666666664,
+        "lo": 0.041666666666666664,
+        "hi": 0.041666666666666664,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.95
+    },
+    {
+      "name": "tau=0.96",
+      "hit_rate": {
+        "mean": 0.0625,
+        "lo": 0.0625,
+        "hi": 0.0625,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.6666666666666666,
+        "lo": 0.6666666666666666,
+        "hi": 0.6666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.041666666666666664,
+        "lo": 0.041666666666666664,
+        "hi": 0.041666666666666664,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.96
+    },
+    {
+      "name": "tau=0.97",
+      "hit_rate": {
+        "mean": 0.0625,
+        "lo": 0.0625,
+        "hi": 0.0625,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.6666666666666666,
+        "lo": 0.6666666666666666,
+        "hi": 0.6666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.041666666666666664,
+        "lo": 0.041666666666666664,
+        "hi": 0.041666666666666664,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.97
+    },
+    {
+      "name": "tau=0.98",
+      "hit_rate": {
+        "mean": 0.0625,
+        "lo": 0.0625,
+        "hi": 0.0625,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.6666666666666666,
+        "lo": 0.6666666666666666,
+        "hi": 0.6666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.041666666666666664,
+        "lo": 0.041666666666666664,
+        "hi": 0.041666666666666664,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.98
+    },
+    {
+      "name": "tau=0.99",
+      "hit_rate": {
+        "mean": 0.0625,
+        "lo": 0.0625,
+        "hi": 0.0625,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_hits": {
+        "mean": 0.6666666666666666,
+        "lo": 0.6666666666666666,
+        "hi": 0.6666666666666666,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "false_hit_rate_of_total": {
+        "mean": 0.041666666666666664,
+        "lo": 0.041666666666666664,
+        "hi": 0.041666666666666664,
+        "n": 3,
+        "method": "bootstrap-percentile",
+        "ci_level": 0.95,
+        "seed": 1234
+      },
+      "tau": 0.99
+    }
+  ],
+  "ci": "bootstrap95",
+  "description": "Hit rate vs. false-hit rate as the semantic cache's similarity threshold tau is swept from 0.80 to 0.99, against a hand-authored SYNTHETIC labelled query set (see build_synthetic_queryset() docstring) -- not a real production query log. A false hit is a returned cached answer that does not match the querying user's own ground-truth answer; it is measured directly by comparing answers, not inferred from the similarity score. The query set is deliberately adversarial-weighted (roughly a third of evaluation queries are constructed confusable/ambiguous pairs meant to stress-test the false-hit path) rather than a representative traffic sample, so absolute hit rates here read low and conditional false-hit rates read high compared to what real production traffic -- mostly clean paraphrases and mostly-unrelated misses -- would show. The point of this benchmark is the shape of the tradeoff and the honesty of the measurement, not a hit-rate number to advertise.",
+  "false_hit_rate_of_hits_definition": "false_hits / hits (conditional on the cache answering at all)",
+  "false_hit_rate_of_total_definition": "false_hits / total_evaluation_queries",
+  "dataset": "synthetic",
+  "embedder": "HashingEmbedder (deterministic bag-of-hashed-tokens fake; see module docstring)",
+  "operating_point": {
+    "tau": 0.91,
+    "hit_rate": 0.125,
+    "false_hit_rate_of_hits": 0.3333333333333333,
+    "false_hit_rate_of_total": 0.041666666666666664,
+    "meets_threshold": false,
+    "threshold": 0.05,
+    "selection_rule": "min(false_hit_rate_of_total), tie-broken by max(hit_rate)"
+  },
+  "operating_point_reasoning": "false_hit_rate_of_total flattens to its minimum (~0.042, an irreducible floor from the context-ambiguous exact-duplicate scenario -- see build_synthetic_queryset()) at tau=0.91 and does not improve further at any tighter tau in the sweep, because that residual error comes from a literal cache-key collision (same text, different hidden user context) that a similarity threshold cannot fix by construction. Every tau above 0.91 therefore only trades away hit_rate for zero further safety gain, so 0.91 is chosen as the loosest tau that is exactly as safe as the safest tau. Fixing the remaining floor requires enriching the cache key with session/account context, not moving tau -- a genuine design limitation of a text-only semantic cache key, reported rather than hidden."
+}

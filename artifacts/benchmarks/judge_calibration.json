@@ -1,0 +1,85 @@
+{
+  "judge": "heuristic-lexical",
+  "n": 100,
+  "seed": 1234,
+  "threshold": 0.6,
+  "kappa_pairwise": {
+    "mean": 0.5908733280881197,
+    "lo": 0.4823193547030151,
+    "hi": 0.702607389685363,
+    "n": 100,
+    "method": "bootstrap-percentile-kappa",
+    "ci_level": 0.95,
+    "seed": 1234
+  },
+  "agreement_pairwise": {
+    "mean": 0.74,
+    "lo": 0.6462901055081282,
+    "hi": 0.8159530153525186,
+    "n": 100,
+    "method": "wilson",
+    "ci_level": 0.95,
+    "seed": null
+  },
+  "swap_rate": {
+    "mean": 0.0,
+    "lo": 0.0,
+    "hi": 0.036993498206985664,
+    "n": 100,
+    "method": "wilson",
+    "ci_level": 0.95,
+    "seed": null
+  },
+  "position_preference": {
+    "mean": 0.5,
+    "lo": 0.43102163323431003,
+    "hi": 0.56897836676569,
+    "n": 198,
+    "method": "wilson",
+    "ci_level": 0.95,
+    "seed": null
+  },
+  "kappa_support": {
+    "mean": 0.11380979732501849,
+    "lo": 0.06689807879559581,
+    "hi": 0.17062634989200864,
+    "n": 200,
+    "method": "bootstrap-percentile-kappa",
+    "ci_level": 0.95,
+    "seed": 1234
+  },
+  "agreement_support": {
+    "mean": 0.46,
+    "lo": 0.39233051799971463,
+    "hi": 0.5291771081104667,
+    "n": 200,
+    "method": "wilson",
+    "ci_level": 0.95,
+    "seed": null
+  },
+  "confusion": {
+    "A": {
+      "A": 36,
+      "B": 0,
+      "tie": 0
+    },
+    "B": {
+      "A": 0,
+      "B": 37,
+      "tie": 0
+    },
+    "tie": {
+      "A": 9,
+      "B": 17,
+      "tie": 1
+    }
+  },
+  "trust_pairwise": false,
+  "trust_support": false,
+  "trusted_metrics": [],
+  "untrusted_metrics": [
+    "answer_relevance_judged",
+    "faithfulness_judged"
+  ],
+  "verdict": "JUDGE NOT TRUSTED: 'heuristic-lexical' scored kappa=0.591 [0.482, 0.703] < 0.6 on n=100 human labels. Per implementation.md section 14 the judged metrics are suppressed and the harness falls back to deterministic metrics."
+}
