@@ -58,6 +58,7 @@ from localmind.eval.judge_calibration import (
     flip_verdict,
 )
 from localmind.eval.report import (
+    BaselineLookup,
     LocalBaselineSource,
     check_regression,
     extract_metric,
@@ -1267,6 +1268,228 @@ def test_git_baseline_source_is_disabled_by_env(monkeypatch):
 
     monkeypatch.setenv("LOCALMIND_EVAL_NO_GIT", "1")
     assert GitBaselineSource().get("main", "retrieval") is None
+
+
+# ======================================================================================
+# The gate must be able to fail. These tests exist because it could not.
+# ======================================================================================
+def _gate_root(tmp_path, *, current=0.80, baseline=None):
+    root = tmp_path / "benchmarks"
+    root.mkdir(parents=True, exist_ok=True)
+    per_q = {"q1": 0.9, "q2": 0.8, "q3": 0.7}
+    (root / "eval_retrieval.json").write_text(
+        json.dumps(_payload(current, per_q)), encoding="utf-8"
+    )
+    if baseline is not None:
+        (root / "baselines" / "main").mkdir(parents=True, exist_ok=True)
+        (root / "baselines" / "main" / "eval_retrieval.json").write_text(
+            json.dumps(_payload(baseline, per_q)), encoding="utf-8"
+        )
+    return root
+
+
+def test_require_baseline_turns_an_unresolvable_baseline_into_a_failure(tmp_path, monkeypatch):
+    """The C3 regression test: a gate that compared nothing must not exit 0.
+
+    Before `--require-baseline` existed, every path in `GitBaselineSource.get`
+    returned `None` and `check_regression` mapped `None` to `passed=True`, so a
+    typo'd ref, a missing git and a genuine first run were one indistinguishable
+    green build. `docs/benchmarks.md` recorded `status: **PASS** -- no baseline`,
+    which is how we know the gate had never once compared anything.
+    """
+    monkeypatch.setenv("LOCALMIND_EVAL_NO_GIT", "1")
+    from localmind.eval.report import EXIT_NO_BASELINE
+    from localmind.eval.report import main as report_main
+
+    root = _gate_root(tmp_path)  # no baseline anywhere
+    argv = ["--artifacts", str(root), "--baseline", "no-such-ref-xyz", "--no-docs"]
+
+    assert report_main(argv) == 0, "without the flag, a local run still skips permissively"
+    assert report_main([*argv, "--require-baseline"]) == EXIT_NO_BASELINE
+    assert EXIT_NO_BASELINE != 0
+
+
+def test_require_baseline_still_gates_normally_when_a_baseline_exists(tmp_path, monkeypatch):
+    """`--require-baseline` must not become a blanket failure: it only removes the skip."""
+    monkeypatch.setenv("LOCALMIND_EVAL_NO_GIT", "1")
+    from localmind.eval.report import main as report_main
+
+    def run(current):
+        root = _gate_root(tmp_path / str(current), current=current, baseline=0.80)
+        return report_main(
+            [
+                "--artifacts",
+                str(root),
+                "--require-baseline",
+                "--max-regression",
+                "0.02",
+                "--no-docs",
+            ]
+        )
+
+    assert run(0.90) == 0, "an improvement must pass"
+    assert run(0.80) == 0, "no change must pass"
+    assert run(0.70) == 1, "a 12.5% drop against a 2% budget must fail"
+
+
+def test_baseline_lookup_does_not_collapse_absent_into_error(tmp_path):
+    """`absent` and `error` are different facts, and used to be the same `None`.
+
+    Both used to surface as `None`. A first run is legitimate; an unreadable
+    baseline is a defect that happens to look identical from the outside, and
+    reporting it as a first run is how a broken gate stays green for months.
+    """
+    root = tmp_path / "benchmarks"
+    (root / "baselines" / "main").mkdir(parents=True)
+
+    absent = LocalBaselineSource(root).lookup("main", "eval_retrieval")
+    assert absent.status == "absent"
+    assert not absent.resolved
+    assert "eval_retrieval.json" in absent.detail, "the message must name what it looked for"
+
+    (root / "baselines" / "main" / "eval_retrieval.json").write_text("{not json", encoding="utf-8")
+    broken = LocalBaselineSource(root).lookup("main", "eval_retrieval")
+    assert broken.status == "error"
+    assert not broken.resolved
+
+    (root / "baselines" / "main" / "eval_retrieval.json").write_text(
+        json.dumps(_payload(0.8)), encoding="utf-8"
+    )
+    ok = LocalBaselineSource(root).lookup("main", "eval_retrieval")
+    assert ok.status == "found" and ok.resolved and ok.payload is not None
+
+
+def test_chained_lookup_does_not_launder_an_error_into_a_first_run():
+    """A later `absent` must not overwrite an earlier `error`."""
+    from localmind.eval.report import ChainedBaselineSource
+
+    class Boom:
+        def lookup(self, ref, artifact):
+            return BaselineLookup("error", "git exploded")
+
+        def get(self, ref, artifact):
+            return None
+
+    class Empty:
+        def lookup(self, ref, artifact):
+            return BaselineLookup("absent", "nothing here")
+
+        def get(self, ref, artifact):
+            return None
+
+    chained = ChainedBaselineSource([Boom(), Empty()])
+    result = chained.lookup("main", "eval_retrieval")
+    assert result.status == "error"
+    assert "git exploded" in result.detail and "nothing here" in result.detail
+
+
+def test_os_release_detects_windows_11_rather_than_trusting_platform_release():
+    """`platform.release()` says "10" on Windows 11. Artifacts recorded that for months."""
+    import platform
+
+    from localmind.eval.system import WINDOWS_11_MIN_BUILD, os_release
+
+    release = os_release()
+    assert release
+    if platform.system() != "Windows":
+        assert release == platform.release()
+        return
+    build = int(platform.win32_ver()[1].split(".")[2])
+    assert f"build {build}" in release, "the build number must be shown so the claim is checkable"
+    assert release.startswith("11" if build >= WINDOWS_11_MIN_BUILD else platform.release())
+    if build >= WINDOWS_11_MIN_BUILD:
+        assert not release.startswith("10"), "Windows 11 must not be recorded as Windows 10"
+
+
+def test_superseded_artifacts_are_retracted_not_republished(tmp_path):
+    """M1: a withdrawn run must not come back as a peer section on regeneration."""
+    from localmind.eval.report import SUPERSEDED_BY_KEY, SUPERSEDED_KEY
+
+    root = tmp_path / "benchmarks"
+    root.mkdir(parents=True)
+    (root / "eval_retrieval.json").write_text(json.dumps(_payload(0.80)), encoding="utf-8")
+    bad = _payload(0.99) | {
+        SUPERSEDED_KEY: "aliased machine drift onto variant identity",
+        SUPERSEDED_BY_KEY: "artifacts/benchmarks/eval_retrieval.json",
+    }
+    (root / "old_run.json").write_text(json.dumps(bad), encoding="utf-8")
+
+    text = regenerate_benchmarks_md(root, tmp_path / "b.md").read_text(encoding="utf-8")
+    assert "RETRACTED -- retrieval (`old_run`)" in text
+    assert "aliased machine drift onto variant identity" in text
+    assert "0.990 [0.940, 1.040]" not in text, "retracted rows must not be republished"
+    assert "0.800 [0.750, 0.850]" in text, "the current run is still reported"
+
+
+def test_the_filename_convention_retracts_even_without_the_field(tmp_path):
+    """A `*_superseded_*` file must not be republished just because the field is missing."""
+    root = tmp_path / "benchmarks"
+    root.mkdir(parents=True)
+    (root / "inference_superseded_blocked_ordering.json").write_text(
+        json.dumps(_payload(0.99)), encoding="utf-8"
+    )
+    text = regenerate_benchmarks_md(root, tmp_path / "b.md").read_text(encoding="utf-8")
+    assert "RETRACTED" in text
+    assert "0.990 [0.940, 1.040]" not in text
+
+
+def test_rows_are_labelled_by_bench_instead_of_a_literal_question_mark(tmp_path):
+    """Every inference and model row used to render as `**?**` -- `bench` was not in the list."""
+    from localmind.eval.report import _row_label
+
+    assert _row_label({"bench": "kv_cache", "variant": "paged"}) == "kv_cache / paged"
+    assert _row_label({"bench": "thread_scaling"}) == "thread_scaling"
+    assert _row_label({"name": "sys", "variant": "sys"}) == "sys", "no redundant 'sys / sys'"
+    assert _row_label({"tokenizer": "GPT-2"}) == "GPT-2"
+    assert _row_label({"nothing": 1}) == "?"
+
+    root = tmp_path / "benchmarks"
+    root.mkdir(parents=True)
+    est = {"mean": 1.0, "lo": 0.9, "hi": 1.1, "n": 3}
+    (root / "inference.json").write_text(
+        json.dumps({"name": "inference", "rows": [{"bench": "kv_cache", "decode_ms": est}]}),
+        encoding="utf-8",
+    )
+    text = regenerate_benchmarks_md(root, tmp_path / "b.md").read_text(encoding="utf-8")
+    assert "**kv_cache**" in text and "**?**" not in text
+
+
+def test_regeneration_composes_contributed_sections_instead_of_deleting_them(tmp_path):
+    """H2: three other producers write into this document. None may be destroyed.
+
+    They used to `open(..., "a")` on `docs/benchmarks.md` directly, so the command
+    the document names as its own generator deleted all three every time it ran --
+    and re-running a producer duplicated its section. Composition is now explicit:
+    each producer owns one file under `sections/`, and regeneration is idempotent.
+    """
+    from localmind.eval.report import write_contributed_section
+
+    root = tmp_path / "benchmarks"
+    root.mkdir(parents=True)
+    (root / "eval_retrieval.json").write_text(json.dumps(_payload(0.8)), encoding="utf-8")
+    write_contributed_section("60-inference", "## Phase 6\n\n| a | b |\n", root)
+    write_contributed_section("20-model", "## Phase 2\n\npeak MB 19.5\n", root)
+
+    out = tmp_path / "b.md"
+    first = regenerate_benchmarks_md(root, out).read_text(encoding="utf-8")
+    assert "## Phase 2" in first and "## Phase 6" in first
+    assert first.index("## Phase 2") < first.index("## Phase 6"), "composed in filename order"
+
+    second = regenerate_benchmarks_md(root, out).read_text(encoding="utf-8")
+    assert second == first, "regeneration must be idempotent, not append-and-grow"
+
+
+def test_a_skipped_gate_is_not_written_up_as_a_pass(tmp_path):
+    """`docs/benchmarks.md` said `status: **PASS** -- no baseline`. It must not."""
+    root = tmp_path / "benchmarks"
+    root.mkdir(parents=True)
+    (root / "eval_retrieval.json").write_text(json.dumps(_payload(0.8)), encoding="utf-8")
+    gate = check_regression(extract_metric(_payload(0.8), "ndcg@10"), None)
+    text = regenerate_benchmarks_md(root, tmp_path / "b.md", gate=gate).read_text(encoding="utf-8")
+
+    assert "**SKIPPED**" in text
+    assert "**PASS**" not in text
+    assert gate.ran is False and gate.passed is True
 
 
 def test_benchmarks_md_contains_the_headline_table_and_rule5_note(tmp_path):

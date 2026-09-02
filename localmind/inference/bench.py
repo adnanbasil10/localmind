@@ -3,8 +3,11 @@
     uv run python -m localmind.inference.bench            # or: just bench-inference
 
 Writes ``artifacts/benchmarks/inference.json`` in the CONVENTIONS.md schema
-(``{"name","hardware","seeds","rows":[...],"ci":"bootstrap95"}``) and appends a summary to
-``docs/benchmarks.md``. Three seeds and a percentile bootstrap 95% CI on every stochastic
+(``{"name","hardware","seeds","rows":[...],"ci":"bootstrap95"}``) and this phase's section
+of ``docs/benchmarks.md`` to ``artifacts/benchmarks/sections/60-inference.md``, which
+``localmind.eval.report`` composes into the deliverable. It used to append straight to the
+deliverable, so the regeneration command that document names as its own generator deleted
+this section on every run. Three seeds and a percentile bootstrap 95% CI on every stochastic
 quantity; hardware is recorded in the artifact, because a tokens/s figure without a
 machine attached to it is not a measurement.
 
@@ -27,6 +30,7 @@ from typing import Any
 
 import torch
 
+from localmind.eval.system import os_release
 from localmind.inference.constrained import (
     ConstrainedDecoder,
     generate_json,
@@ -70,6 +74,10 @@ __all__ = ["bootstrap_ci", "main", "run_benchmarks", "summarise_samples"]
 
 DEFAULT_SEEDS: tuple[int, ...] = (0, 1, 2)
 DEFAULT_CONFIG = "configs/model/12m_proxy.yaml"
+INFERENCE_SECTION = "artifacts/benchmarks/sections/60-inference.md"
+"""This phase's contributed section of `docs/benchmarks.md`. The `60-` prefix
+orders it among the other producers; `localmind.eval.report` composes them in
+filename order."""
 
 
 # ---------------------------------------------------------------------------------
@@ -110,7 +118,7 @@ def hardware_string() -> str:
         "CPU-only",
         platform.processor() or platform.machine(),
         f"{torch.get_num_threads()} torch thread(s)",
-        f"{platform.system()} {platform.release()}",
+        f"{platform.system()} {os_release()}",
         f"python {sys.version.split()[0]}",
         f"torch {torch.__version__}",
     ]
@@ -1055,7 +1063,7 @@ def run_benchmarks(
     quick: bool = False,
     full: bool = False,
     out_path: str | Path = "artifacts/benchmarks/inference.json",
-    docs_path: str | Path | None = "docs/benchmarks.md",
+    section_path: str | Path | None = INFERENCE_SECTION,
     threads: int = 2,
 ) -> dict[str, Any]:
     """Run the selected sections and write the CONVENTIONS.md artifact."""
@@ -1160,8 +1168,8 @@ def run_benchmarks(
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    if docs_path is not None:
-        append_markdown(Path(docs_path), payload)
+    if section_path is not None:
+        write_section(Path(section_path), payload)
     return payload
 
 
@@ -1171,7 +1179,8 @@ def _fmt(est: Any, digits: int = 1) -> str:
     return f"{est['mean']:.{digits}f} [{est['ci_low']:.{digits}f}, {est['ci_high']:.{digits}f}]"
 
 
-def append_markdown(path: Path, payload: dict[str, Any]) -> None:
+def write_section(path: Path, payload: dict[str, Any]) -> None:
+    """Render this phase's contributed section. Owns one file; appends to nothing."""
     rows = payload["rows"]
     lines: list[str] = [
         "",
@@ -1347,10 +1356,8 @@ def append_markdown(path: Path, payload: dict[str, Any]) -> None:
                 f"vLLM on a T4: **{r['status']}** - {r['reason']}.",
                 f"Expected outcome when run: {r['expected_outcome']}",
             ]
-    lines.append("")
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write("\n".join(lines))
+    path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1367,7 +1374,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--threads", type=int, default=2)
     parser.add_argument("--out", default="artifacts/benchmarks/inference.json")
-    parser.add_argument("--docs", default="docs/benchmarks.md")
+    parser.add_argument(
+        "--section",
+        default=INFERENCE_SECTION,
+        help="contributed-section file this harness owns; composed into docs/benchmarks.md "
+        "by `python -m localmind.eval.report`",
+    )
     parser.add_argument("--no-docs", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
@@ -1378,7 +1390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         quick=args.quick,
         full=args.full,
         out_path=args.out,
-        docs_path=None if args.no_docs else args.docs,
+        section_path=None if args.no_docs else args.section,
         threads=args.threads,
     )
     print(f"wrote {len(payload['rows'])} rows -> {args.out}")

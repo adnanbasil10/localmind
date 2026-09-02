@@ -41,6 +41,7 @@ __all__ = [
     "MATRIX_COLUMNS",
     "MATRIX_ROWS",
     "NOT_RUN",
+    "POST_SECTION",
     "ComparisonMatrix",
     "MatrixCell",
     "MatrixRow",
@@ -356,20 +357,34 @@ def dod_verdict(matrix: ComparisonMatrix) -> dict[str, Any]:
     }
 
 
+POST_SECTION = "artifacts/benchmarks/sections/50-post.md"
+"""This phase's contributed section of `docs/benchmarks.md`. The `50-` prefix
+orders it among the other producers; `localmind.eval.report` composes them in
+filename order."""
+
+
 def write_matrix_artifact(
     matrix: ComparisonMatrix,
     json_path: str | Path = "artifacts/benchmarks/phase5_comparison_matrix.json",
-    markdown_path: str | Path | None = None,
+    markdown_path: str | Path | None = POST_SECTION,
 ) -> Path:
-    """Write the CONVENTIONS.md JSON envelope, and optionally append the markdown table."""
+    """Write the CONVENTIONS.md JSON envelope and this phase's contributed section.
+
+    `markdown_path` names the one file this producer owns. It is *written*, not
+    appended: appending straight to `docs/benchmarks.md` meant re-running this
+    duplicated the table, and running the deliverable's own documented generator
+    deleted it. `localmind.eval.report` composes `sections/*.md` instead.
+    """
     jp = Path(json_path)
     jp.parent.mkdir(parents=True, exist_ok=True)
     jp.write_text(json.dumps(matrix.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
     if markdown_path is not None:
         mp = Path(markdown_path)
         mp.parent.mkdir(parents=True, exist_ok=True)
-        with mp.open("a", encoding="utf-8") as fh:
-            fh.write("\n\n## Phase 5 (SS9 5e) — prompt vs retrieve vs finetune vs distill\n\n")
-            fh.write(render_matrix_markdown(matrix))
-            fh.write("\n")
+        mp.write_text(
+            "## Phase 5 (SS9 5e) — prompt vs retrieve vs finetune vs distill\n\n"
+            + render_matrix_markdown(matrix).rstrip()
+            + "\n",
+            encoding="utf-8",
+        )
     return jp

@@ -41,6 +41,12 @@ bench-tokenizer:
 bench-inference:
     uv run python -m localmind.inference.bench
 
+# Regenerates artifacts/benchmarks/retrieval.json. The benchmark lives in the test
+# suite, but a plain `pytest` run must not mutate a committed artifact, so publishing
+# is opt-in and this recipe is the documented way to ask for it.
+bench-retrieval:
+    $env:LOCALMIND_PUBLISH_ARTIFACTS = "1"; uv run pytest -q -s tests/test_retrieval.py::test_benchmark_table_and_fusion_comparison
+
 eval-retrieval:
     uv run python -m localmind.eval.retrieval --config configs/retrieval/default.yaml
 

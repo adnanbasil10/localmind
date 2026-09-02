@@ -82,7 +82,7 @@ Merge loop, naive → incremental: **22.08×** (45.0119s → 2.0382s @ vocab 204
 | KV cache | MHA 16 KB/token → **GQA 4:1 = 4 KB/token** |
 | Attention backends | naive / sdpa_math / sdpa_efficient agree to **1e-3** in fp32 |
 | Overfit correctness test | **CE 0.00614** on 100 random sequences, CPU, 140 steps |
-| Doc-boundary masking | packed doc B vs alone: max-abs-diff **< 1e-3** with mask, **> 1e-3** without — what `tests/test_model.py` actually asserts |
+| Doc-boundary masking | packed doc B vs alone, max-abs-diff **5.96e-8** with mask (1.19e-7 on `sdpa_math`) vs **0.182** without — printed on every run by `tests/test_model.py::test_packed_document_cannot_attend_across_a_boundary`; the assertions are the looser bounds that guard it |
 
 ### Guardrails · *measured*
 
@@ -94,7 +94,7 @@ Merge loop, naive → incremental: **22.08×** (45.0119s → 2.0382s @ vocab 204
 **n = 8.** That interval is far too wide to support any comparison, and it is quoted here rather
 than hidden because the project's own rule 5 forbids a bare point estimate. Treat 37.5% as
 "this defence does not currently generalise", not as a measurement.
-| `calculate` sandbox | **66/66** hostile inputs rejected (`__import__`, `__mro__`, `9**9**9`, …) |
+| `calculate` sandbox | **69/69** hostile inputs rejected (`__import__`, `__mro__`, `9**9**9`, `round(2, -10**7)`, fullwidth-dunder, …) |
 | Agent termination | 300 seeded fuzzer runs, **all terminate**, 0 hit the step cap |
 
 ### Semantic cache — τ sweep · *synthetic*

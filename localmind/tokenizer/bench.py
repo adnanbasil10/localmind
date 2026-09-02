@@ -37,6 +37,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from localmind.eval.system import os_release
 from localmind.tokenizer.bpe import train_bpe_incremental, train_bpe_naive
 from localmind.tokenizer.tokenizer import BASE_VOCAB_SIZE, Tokenizer
 
@@ -333,7 +334,7 @@ def run(vocab_size: int = 16384, merge_bench_vocab_size: int = 2048) -> dict[str
 
     report = {
         "name": "tokenizer",
-        "hardware": f"{platform.system()} {platform.release()} / {platform.processor()}",
+        "hardware": f"{platform.system()} {os_release()} / {platform.processor()}",
         "seeds": [SEED],
         "rows": rows,
         "ci": "bootstrap95",

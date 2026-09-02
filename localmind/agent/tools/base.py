@@ -5,7 +5,11 @@ Every tool in this package obeys the same contract:
 * **Typed pydantic schema.** Args are validated before the tool body runs; a
   validation failure is an `invalid_input` *result*, not an exception.
 * **Timeout.** The body runs on a daemon thread and is abandoned if it overruns,
-  so a wedged provider cannot wedge the agent (or interpreter shutdown).
+  so a wedged provider cannot wedge the agent (or interpreter shutdown). This
+  covers I/O waits and any body that releases the GIL -- which is what a "wedged
+  provider" actually is. It does **not** cover CPU-bound work inside a single
+  C call that holds the GIL; see `call_with_timeout` for why, and what tools are
+  required to do instead.
 * **Retry with exponential backoff.** Only retryable failures are retried, and
   the sleep goes through an injectable `Clock`, so tests are instant.
 * **Structured error returned TO the model.** `ToolResult.ok is False` with a
@@ -57,6 +61,22 @@ def call_with_timeout(fn: Callable[[], Any], timeout_s: float) -> Any:
 
     Daemon threads (rather than a `ThreadPoolExecutor`) are deliberate: an
     abandoned worker must never block interpreter shutdown.
+
+    **Known limit, stated because it is load-bearing.** This is a watchdog, not a
+    preemption primitive. `done.wait(timeout_s)` can only fire when the
+    interpreter is free to schedule this thread, so the timeout is real for
+    blocking I/O, `time.sleep`, and any extension that releases the GIL -- and
+    inert for CPU-bound work inside a *single* C call that holds the GIL
+    throughout. CPython bigint arithmetic is the canonical example:
+    `round(2, -10**7)` returned `ok=True` after 11 s under a 1.0 s timeout,
+    because the waiter never got a turn.
+
+    There is no thread-level fix; interrupting that would need a subprocess.
+    Tools whose bodies can be driven into GIL-holding C by their *arguments*
+    must therefore bound those arguments before evaluating -- which is what
+    `calculate._guarded_pow`, `_guarded_factorial` and `_guarded_round` do. Treat
+    this timeout as a backstop for hung providers, never as the containment story
+    for untrusted input.
     """
     if timeout_s <= 0:
         raise _TimeoutError(f"timeout budget of {timeout_s}s is exhausted before the call")

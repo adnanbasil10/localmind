@@ -90,6 +90,8 @@ from localmind.retrieval.rerank import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PUBLISH_ARTIFACTS_ENV = "LOCALMIND_PUBLISH_ARTIFACTS"
+"""Set to ``1`` to let a benchmark test overwrite the committed artifact it produces."""
 
 # ==============================================================================================
 # BM25 — hand-verified against an independently-computed formula
@@ -1255,11 +1257,16 @@ _ROW_NAMES = [
 
 
 @pytest.mark.slow
-def test_benchmark_table_and_fusion_comparison():
+def test_benchmark_table_and_fusion_comparison(tmp_path: Path):
     """Builds the spec's §12 benchmark table on a synthetic-but-nontrivial local corpus (10
     topics x {2 canonical, 1 paraphrase, 1 ambiguous} + 8 multi-aspect + 40 filler docs = 98
     documents; 30 queries), 3 seeds, bootstrap 95% CIs, and a separate RRF-vs-tuned-fusion
-    comparison on a held-out dev/test split. Writes `artifacts/benchmarks/retrieval.json`.
+    comparison on a held-out dev/test split.
+
+    Writes the artifact to `tmp_path`. This is also the producer of the committed
+    `artifacts/benchmarks/retrieval.json`, but publishing there is opt-in via
+    ``LOCALMIND_PUBLISH_ARTIFACTS=1`` (``just bench-retrieval``): a test run must
+    never mutate a committed artifact as a side effect.
     """
     documents, contextual_documents, doc_lookup, contextual_doc_lookup, queries, qrels = (
         _build_corpus_and_queries()
@@ -1500,11 +1507,21 @@ def test_benchmark_table_and_fusion_comparison():
         ],
     }
 
-    out_path = REPO_ROOT / "artifacts" / "benchmarks" / "retrieval.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(artifact, indent=2))
+    out_path = tmp_path / "retrieval.json"
+    out_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
 
     assert out_path.exists()
-    written_back = json.loads(out_path.read_text())
+    written_back = json.loads(out_path.read_text(encoding="utf-8"))
     assert written_back["name"] == "retrieval"
     assert len(written_back["rows"]) == len(_ROW_NAMES)
+
+    # Publishing is opt-in. `pytest` used to rewrite the committed artifact on
+    # every run: the quality metrics are bit-identical, but p50_ms/p95_ms drift
+    # with machine load, so `git status` came back dirty with ~81 lines of noise
+    # after any test run and a drifted artifact was one `git commit -a` away from
+    # being published as a measurement nobody meant to take.
+    if os.environ.get(PUBLISH_ARTIFACTS_ENV) == "1":  # pragma: no cover - opt-in path
+        published = REPO_ROOT / "artifacts" / "benchmarks" / "retrieval.json"
+        published.parent.mkdir(parents=True, exist_ok=True)
+        published.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+        print(f"published {published}")

@@ -9,8 +9,14 @@ path to Python objects, because names are looked up in a fixed dict of floats.
 
 Denial of service is a real attack here too, so the walker enforces, in order:
 character cap, node cap, depth cap, a pre-check on every `**` (rejecting
-`9**9**9` *before* computing it), and a magnitude cap re-checked after every
-binary operation.
+`9**9**9` *before* computing it), a pre-check on every allowlisted function that
+hides an exponent (`factorial`, `pow`, and `round`'s `ndigits` -- see
+`_guarded_round`), and a magnitude cap re-checked after every binary operation.
+
+The pre-checks are load-bearing rather than belt-and-braces: CPython's bigint
+arithmetic runs in C with the GIL held, so the tool timeout in `base.py` cannot
+preempt an expensive call once it has started. Every DoS guard here therefore
+refuses *before* evaluation; none of them rely on being able to interrupt.
 
 `safe_eval` is importable on its own; `CalculateTool` is the agent-facing wrapper.
 """
@@ -19,6 +25,7 @@ from __future__ import annotations
 
 import ast
 import math
+import unicodedata
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
@@ -34,6 +41,13 @@ MAX_POW_EXPONENT = 64
 MAX_INT_BITS = 1024
 MAX_FACTORIAL = 20
 MAX_CALL_ARGS = 4
+MAX_ROUND_NDIGITS = MAX_POW_EXPONENT
+"""`round(x, ndigits)` hides a `**`, so `ndigits` gets the `**` bound.
+
+CPython's `int.__round__` evaluates `10 ** abs(ndigits)` internally. That makes
+`ndigits` an exponent wearing a different hat, and it is bounded by the same
+number as an explicit `**` exponent rather than by a limit of its own.
+"""
 
 
 class UnsafeExpressionError(ValueError):
@@ -74,9 +88,38 @@ def _guarded_pow(base: Number, exponent: Number) -> Number:
     return _check_magnitude(base**exponent)
 
 
+def _guarded_round(value: Number, ndigits: Number | None = None) -> Number:
+    """Bound `ndigits` *before* the call, because nothing can stop it afterwards.
+
+    `int.__round__` computes `10 ** (-ndigits)` internally, so `round(2, -10**7)`
+    -- 16 characters, 6 AST nodes, inside every character/node/depth cap, with no
+    `**` on the expensive operand -- spends ~11 s building a multi-megabyte
+    integer. `_check_magnitude` cannot help: it runs on the *result*, which is a
+    tidy `0`, long after the giant intermediate has been built and discarded.
+
+    Nor can the tool timeout help. That work happens entirely in C with the GIL
+    held, so `base.call_with_timeout`'s watchdog thread is never scheduled and
+    `CalculateTool(timeout_s=1.0)` returns `ok=True` after 11 seconds. Refusal
+    before evaluation is the only defence that actually works here; see
+    `tests/test_agent.py::test_calculate_refuses_gil_holding_work_before_running_it`.
+    """
+    if ndigits is None:
+        return _check_magnitude(round(value))
+    # `abs()` on a bounded int is O(1) and never converts to float, so this
+    # comparison cannot itself be the expensive step.
+    if abs(ndigits) > MAX_ROUND_NDIGITS:
+        raise UnsafeExpressionError(
+            f"round() ndigits magnitude exceeds the sandbox limit of {MAX_ROUND_NDIGITS} "
+            f"(denial-of-service guard: ndigits is a power-of-ten exponent)"
+        )
+    if not isinstance(ndigits, int):
+        raise UnsafeExpressionError("round() ndigits must be an integer")
+    return _check_magnitude(round(value, ndigits))
+
+
 _FUNCTIONS: dict[str, Any] = {
     "abs": abs,
-    "round": round,
+    "round": _guarded_round,
     "min": min,
     "max": max,
     "int": int,
@@ -279,10 +322,16 @@ def safe_eval(expression: str) -> Number:
         raise UnsafeExpressionError(f"expression exceeds {MAX_EXPRESSION_CHARS} characters")
     if "\x00" in text:
         raise UnsafeExpressionError("null byte in expression")
-    if "__" in text:
+    if "__" in unicodedata.normalize("NFKC", text):
         # Belt and braces: dunder traversal is already impossible (no Attribute node,
         # no name resolution to objects), but refusing the substring outright makes
         # the property obvious to a reader and to an auditor.
+        #
+        # Normalised first because Python normalises identifiers with NFKC, so a
+        # fullwidth `U+FF3F` spelling of `__import__` reaches the parser as the
+        # dunder while defeating a raw substring test. CPython 3.11 happens to
+        # reject U+FF3F at tokenize time, so this was never a live bypass -- but a
+        # check that only works because of an accident elsewhere is not a check.
         raise UnsafeExpressionError("dunder names are not permitted")
     try:
         tree = ast.parse(text, mode="eval")

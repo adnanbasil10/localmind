@@ -375,7 +375,15 @@ HOSTILE_EXPRESSIONS = [
     "1%0",
     "0**-1",
     "pow(9, 9**9)",
+    # `round`'s ndigits is a power-of-ten exponent in disguise: unguarded these
+    # burn ~11 s / ~415 MB inside `int.__round__`, and the tool timeout cannot
+    # preempt GIL-holding C code. Both must be refused before evaluation.
+    "round(2, -10**7)",
+    "round(2, -10**9)",
     "round(1.0).__class__",
+    # Fullwidth U+FF3F NFKC-normalises to "_", so this is `__import__` to Python's
+    # identifier rules but not to a raw `"__" in text` substring test.
+    "＿＿import＿＿('os')",
     "\x00",
     "sqrt(-1)",
     "log(0)",
@@ -485,9 +493,32 @@ def all_tools() -> list[Tool]:
     return [registry.get(n) for n in registry.names()]  # type: ignore[misc]
 
 
+def _gil_holding_work() -> int:
+    """A single C-level call that holds the GIL for its whole duration.
+
+    `10 ** 1_000_000` is `long_pow` in CPython: one bytecode, one C call, no
+    check-interval boundary at which another thread could be scheduled. This is
+    deliberately *not* `time.sleep`, which releases the GIL and would make the
+    watchdog below look like it works.
+    """
+    return 10**1_000_000
+
+
 @pytest.mark.parametrize("tool", all_tools(), ids=lambda t: t.name)
 def test_every_tool_has_a_timeout(tool: Tool, monkeypatch: pytest.MonkeyPatch) -> None:
-    """DoD: every tool must time out rather than hang the agent."""
+    """DoD: every tool must time out rather than hang the agent.
+
+    Scope, stated precisely because the obvious reading is wrong: the body here
+    is `time.sleep`, which **releases the GIL**. What this proves is that a body
+    which yields the interpreter -- blocking I/O, a hung HTTP provider, a stalled
+    subprocess, i.e. the "wedged provider" `base.py` is written against -- is
+    abandoned on schedule for all six tools.
+
+    It proves nothing about CPU-bound work inside a GIL-holding C call, which
+    this watchdog cannot preempt at all. That gap is pinned by
+    `test_tool_timeout_does_not_preempt_gil_holding_work` and defended by
+    `test_calculate_refuses_gil_holding_work_before_running_it`.
+    """
     monkeypatch.setattr(tool, "timeout_s", 0.02)
     monkeypatch.setattr(tool, "retries", 0)
     monkeypatch.setattr(tool, "cache", None)
@@ -510,6 +541,80 @@ def test_every_tool_has_a_timeout(tool: Tool, monkeypatch: pytest.MonkeyPatch) -
     assert result.error.code == "timeout"
     assert result.error.retryable is True
     assert elapsed < 0.4, "the tool waited for the body instead of abandoning it"
+
+
+def test_tool_timeout_does_not_preempt_gil_holding_work(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tool timeout is a watchdog, not preemption. This pins the limit, honestly.
+
+    `call_with_timeout` waits on `threading.Event.wait(timeout_s)`. That waiter can
+    only fire when the interpreter is free to schedule its thread, and CPython holds
+    the GIL for the entire duration of a single bigint C call. So a CPU-bound body
+    of this shape runs to completion and reports **success**, however small the
+    timeout was.
+
+    This asserts the *broken* behaviour on purpose. It is a characterisation test:
+    if a future CPython (or a free-threaded build) ever makes the watchdog able to
+    interrupt this, this test fails and someone gets to delete it and the pre-checks
+    in `calculate.py` become optional rather than load-bearing. Until then, the only
+    real containment for untrusted input is refusing it before evaluation --
+    see `test_calculate_refuses_gil_holding_work_before_running_it`.
+    """
+    # Calibrate on this machine so the assertion is not a bet on hardware speed.
+    started = time.perf_counter()
+    _gil_holding_work()
+    cost_s = time.perf_counter() - started
+    assert cost_s > 0.0
+
+    tool = CalculateTool(timeout_s=cost_s / 20.0, retries=0, cache=None)
+    monkeypatch.setattr(tool, "_call", lambda args: {"result": _gil_holding_work().bit_length()})
+
+    started = time.perf_counter()
+    result = tool.run({"expression": "1+1"})
+    elapsed = time.perf_counter() - started
+
+    assert result.ok is True, (
+        "the watchdog interrupted GIL-holding C code -- that is not supposed to be "
+        "possible in CPython; if it now is, delete this test and revisit calculate.py"
+    )
+    assert result.error is None
+    assert elapsed > cost_s / 2.0, (
+        "the body did not actually run long enough to exercise the GIL-holding path"
+    )
+
+
+def test_calculate_refuses_gil_holding_work_before_running_it() -> None:
+    """The containment that actually exists: refusal *before* evaluation.
+
+    `round(2, -10**7)` is 16 characters and 6 AST nodes, so it sits inside the
+    character, node and depth caps; it has no `**` on the expensive operand, so
+    `_check_pow` never sees it; and its *result* is `0`, so the post-hoc
+    `_check_magnitude` has nothing to object to. Unguarded it spent ~11 s building
+    `10 ** 10_000_000` inside `int.__round__` -- and, per the test above, the tool
+    timeout could not stop it: a 1.0 s timeout returned `ok=True` after 11 s.
+
+    `_guarded_round` bounds `ndigits` the way `_check_pow` bounds an exponent, so
+    the call is refused before any of that work starts. The wall-clock assertion is
+    the point of the test: it fails if the guard is ever removed, because the
+    unguarded path cannot finish in a second.
+    """
+    started = time.perf_counter()
+    with pytest.raises(UnsafeExpressionError, match="ndigits"):
+        safe_eval("round(2, -10**7)")
+    assert time.perf_counter() - started < 1.0, "the guard computed the value before refusing it"
+
+    tool = CalculateTool(timeout_s=1.0, retries=0, cache=None)
+    started = time.perf_counter()
+    result = tool.run({"expression": "round(2, -10**7)"})
+    elapsed = time.perf_counter() - started
+
+    assert result.ok is False
+    assert result.error is not None
+    assert result.error.code == "invalid_input"
+    assert elapsed < 1.0, "the tool evaluated the DoS expression instead of refusing it"
+
+    # Ordinary rounding, including negative ndigits, is untouched.
+    assert safe_eval("round(3.14159, 2)") == pytest.approx(3.14)
+    assert safe_eval("round(1234.5678, -2)") == pytest.approx(1200.0)
 
 
 def test_retry_uses_exponential_backoff_and_stops_at_the_cap() -> None:

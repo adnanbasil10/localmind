@@ -4,8 +4,13 @@ Run the benchmarks with::
 
     uv run python -m localmind.model.transformer
 
-which writes `artifacts/benchmarks/model.json` (CONVENTIONS.md schema) and appends a
-summary table to `docs/benchmarks.md`.
+which writes `artifacts/benchmarks/model.json` (CONVENTIONS.md schema) and the Phase 2
+section of `docs/benchmarks.md` to `artifacts/benchmarks/sections/20-model.md`.
+
+That indirection is the point: `docs/benchmarks.md` has four producers, and this one
+used to append to it directly, so `python -m localmind.eval.report` -- the command the
+document itself names as its generator -- deleted this section every time it ran. Each
+producer now owns exactly one file under `sections/` and the report composes them.
 """
 
 from __future__ import annotations
@@ -40,6 +45,11 @@ from localmind.model.config import (
 from localmind.model.init import init_weights
 from localmind.model.rmsnorm import RMSNorm
 from localmind.model.rope import RotaryEmbedding
+
+MODEL_SECTION = "artifacts/benchmarks/sections/20-model.md"
+"""This phase's contributed section of `docs/benchmarks.md`. The `20-` prefix
+orders it among the other producers; `localmind.eval.report` composes them in
+filename order."""
 
 __all__ = [
     "LocalMindTransformer",
@@ -397,7 +407,7 @@ def run_benchmarks(
     throughput_batch: int = 2,
     throughput_seq: int = 512,
     out_path: str | Path = "artifacts/benchmarks/model.json",
-    docs_path: str | Path | None = "docs/benchmarks.md",
+    section_path: str | Path | None = MODEL_SECTION,
 ) -> dict[str, Any]:
     """Produce every §6 benchmark and write the CONVENTIONS.md JSON artifact."""
     cfg = ModelConfig.from_yaml(config_path)
@@ -448,12 +458,19 @@ def run_benchmarks(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    if docs_path is not None:
-        _append_markdown(Path(docs_path), payload)
+    if section_path is not None:
+        _write_section(Path(section_path), payload)
     return payload
 
 
-def _append_markdown(path: Path, payload: dict[str, Any]) -> None:
+def _write_section(path: Path, payload: dict[str, Any]) -> None:
+    """Write this phase's contributed section. Owns one file; appends to nothing.
+
+    This used to `open("docs/benchmarks.md", "a")`, which meant the documented
+    regeneration command (`python -m localmind.eval.report`) deleted it, and
+    re-running this harness duplicated it. `localmind.eval.report` now composes
+    `artifacts/benchmarks/sections/*.md` into the deliverable instead.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     lines: list[str] = [
         "",
@@ -504,9 +521,7 @@ def _append_markdown(path: Path, payload: dict[str, Any]) -> None:
                 f"{r['tokens_per_s']['mean']:.1f} | "
                 f"{r['mfu_vs_measured_device_peak'] * 100:.1f}% |"
             )
-    lines.append("")
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write("\n".join(lines))
+    path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
 def main() -> None:  # pragma: no cover - benchmark entrypoint

@@ -568,6 +568,19 @@ def test_packed_document_cannot_attend_across_a_boundary(backend: str) -> None:
     # it) -- which is exactly why only B can detect the leak.
     torch.testing.assert_close(bleeding[:, :5], alone_a, rtol=1e-4, atol=1e-5)
 
+    # Print the measured separation, not just the bound it clears. The assertions
+    # above are `> 1e-2` and `assert_close`, which are the right *guards* but make
+    # the README's "6e-8 with mask, 0.18 without" untraceable: a bound is not a
+    # measurement. These two numbers are the ones that claim quotes, so they are
+    # emitted on every run and can be read straight out of `pytest -s` output.
+    with_mask = (masked[:, 5:] - alone_b).abs().max().item()
+    without_mask = (bleeding[:, 5:] - alone_b).abs().max().item()
+    print(
+        f"\n[doc-boundary/{backend}] packed doc B vs alone, max|diff|: "
+        f"with_mask={with_mask:.3g} without_mask={without_mask:.3g} "
+        f"(ratio {without_mask / with_mask:,.0f}x)"
+    )
+
 
 def test_backends_agree_with_a_doc_mask() -> None:
     """DoD #2 must still hold on the packed path, not just the plain causal one."""
@@ -833,7 +846,7 @@ def test_benchmark_artifact_matches_conventions_schema(tmp_path: Path) -> None:
         throughput_batch=1,
         throughput_seq=64,
         out_path=out,
-        docs_path=None,
+        section_path=None,
     )
     assert set(payload) >= {"name", "hardware", "seeds", "rows", "ci"}
     assert payload["ci"] == "bootstrap95"

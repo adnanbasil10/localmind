@@ -44,6 +44,7 @@ __all__ = [
     "evaluate_system",
     "hardware_string",
     "measure_request",
+    "os_release",
     "peak_rss_bytes",
 ]
 
@@ -164,11 +165,37 @@ def measure_request(record_id: str, **fields: Any) -> Iterator[RequestRecord]:
         rec.peak_rss_bytes = peak_rss_bytes()
 
 
+WINDOWS_11_MIN_BUILD = 22000
+"""Windows 11 starts here. There is no other reliable boundary: Microsoft never
+bumped the major version past 10.0, so build number is the only signal."""
+
+
+def os_release() -> str:
+    """The OS release, *detected* rather than reported.
+
+    `platform.release()` returns the string `"10"` on Windows 11, because it
+    reads the major version and that is still 10.0. Every artifact in this repo
+    recorded "Windows 10" on a machine running Windows 11 as a result. A
+    provenance string is precisely the kind of claim a reviewer takes on trust
+    and cannot check, so it is worth getting right: the build number does
+    distinguish the two, and is included so the reader can check the inference.
+    """
+    release = platform.release()
+    if platform.system() != "Windows":
+        return release
+    build = 0
+    with contextlib.suppress(IndexError, ValueError):
+        build = int(platform.win32_ver()[1].split(".")[2])
+    if not build:
+        return release
+    return f"{'11' if build >= WINDOWS_11_MIN_BUILD else release} (build {build})"
+
+
 def hardware_string() -> str:
     """The hardware line CONVENTIONS.md requires on every benchmark."""
     bits = [
         platform.system(),
-        platform.release(),
+        os_release(),
         platform.machine(),
         (platform.processor() or "unknown-cpu"),
         f"{os.cpu_count() or '?'}vCPU",

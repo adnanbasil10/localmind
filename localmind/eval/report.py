@@ -10,6 +10,15 @@ The gate fails the build (exit 1) when nDCG@10 drops more than the allowed
 fraction against the baseline.  Where the baseline and the current run share
 question ids, it also runs the paired tests from ``stats.py`` so the verdict
 carries a CI and a p-value rather than a bare delta.
+
+**Pass ``--require-baseline`` in CI.**  Without it, a baseline that cannot be
+resolved is a *skip* that exits 0 -- correct on a laptop and on a genuine first
+run, and catastrophic in CI, where it makes "I could not find anything to
+compare against" indistinguishable from "I compared and it was fine".  That is
+not hypothetical: this gate ran green on every PR without ever having compared
+anything, and ``docs/benchmarks.md`` recorded it as ``status: **PASS**``.  With
+the flag, an unresolvable baseline exits 3 and the message names the ref, every
+path tried, and git's own reason for each failure.
 """
 
 from __future__ import annotations
@@ -23,7 +32,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from localmind.eval.stats import (
     DEFAULT_SEED,
@@ -33,6 +42,7 @@ from localmind.eval.stats import (
 )
 
 __all__ = [
+    "BaselineLookup",
     "BaselineSource",
     "ChainedBaselineSource",
     "GateResult",
@@ -42,7 +52,9 @@ __all__ = [
     "extract_metric",
     "extract_per_question",
     "main",
+    "read_contributed_sections",
     "regenerate_benchmarks_md",
+    "write_contributed_section",
 ]
 
 DEFAULT_ARTIFACTS = Path("artifacts/benchmarks")
@@ -55,17 +67,69 @@ Other phases write their own benchmark JSON into `artifacts/benchmarks/`; the
 name is namespaced so a phase benchmark can never be mistaken for the gate's
 measurement (and vice versa).
 """
+
+EXIT_OK = 0
+EXIT_REGRESSION = 1
+EXIT_NO_CURRENT = 2
+EXIT_NO_BASELINE = 3
+"""CLI exit codes, distinct on purpose.
+
+`1` means the gate ran and the metric regressed. `2` and `3` mean the gate could
+not run at all -- no current measurement, or no baseline under
+``--require-baseline``. Collapsing "could not run" into "passed" is the bug this
+module used to have; collapsing it into "regressed" would be almost as
+misleading to whoever reads the CI log.
+"""
+
 NO_GIT_ENV = "LOCALMIND_EVAL_NO_GIT"
 
 
 # --------------------------------------------------------------------------- #
 # Baselines
 # --------------------------------------------------------------------------- #
+BaselineStatus = Literal["found", "absent", "error"]
+
+
+@dataclass(frozen=True)
+class BaselineLookup:
+    """The outcome of looking for a baseline -- including *why* there isn't one.
+
+    ``payload is None`` used to be the entire answer, and that collapsed three
+    unrelated situations into one green build: a genuine first run, a typo'd ref,
+    and git not being installed all looked identical. They are not the same
+    thing, so they no longer share a status:
+
+    * ``found``  -- resolved; compare against it.
+    * ``absent`` -- the lookup worked and there is genuinely nothing there yet.
+      Legitimate on a first run, and the only case where skipping is honest.
+    * ``error``  -- the lookup itself broke. "No baseline" here is a statement
+      about our plumbing, not about the repo, and must never read as a pass.
+
+    ``detail`` always names what was tried and what went wrong, because "no
+    baseline" with nothing further is exactly what made the old gate impossible
+    to debug from a CI log.
+    """
+
+    status: BaselineStatus
+    detail: str
+    payload: dict[str, Any] | None = None
+
+    @property
+    def resolved(self) -> bool:
+        return self.status == "found" and self.payload is not None
+
+    @staticmethod
+    def none_supplied(metric: str = "the metric") -> BaselineLookup:
+        return BaselineLookup("absent", f"no baseline was supplied for {metric}")
+
+
 @runtime_checkable
 class BaselineSource(Protocol):
     """Where a baseline benchmark artifact comes from."""
 
     def get(self, ref: str, artifact: str) -> dict[str, Any] | None: ...
+
+    def lookup(self, ref: str, artifact: str) -> BaselineLookup: ...
 
 
 @dataclass
@@ -74,31 +138,40 @@ class LocalBaselineSource:
 
     root: Path = DEFAULT_ARTIFACTS
 
-    def get(self, ref: str, artifact: str) -> dict[str, Any] | None:
+    def lookup(self, ref: str, artifact: str) -> BaselineLookup:
         path = self.root / "baselines" / ref / f"{artifact}.json"
+        where = f"local baseline `{path.as_posix()}`"
         if not path.exists():
-            return None
-        return json.loads(path.read_text(encoding="utf-8"))
+            return BaselineLookup("absent", f"{where}: no such file")
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            # The file is there and unreadable. That is a broken baseline, not a
+            # missing one, and must not be reported as "first run".
+            return BaselineLookup("error", f"{where}: {type(exc).__name__}: {exc}")
+        return BaselineLookup("found", where, payload)
+
+    def get(self, ref: str, artifact: str) -> dict[str, Any] | None:
+        return self.lookup(ref, artifact).payload
 
 
 @dataclass
 class GitBaselineSource:
     """``git show <ref>:artifacts/benchmarks/<artifact>.json``.
 
-    Best-effort and entirely optional: any failure returns ``None`` and set
-    ``LOCALMIND_EVAL_NO_GIT=1`` to disable it outright (tests do).
+    Optional -- set ``LOCALMIND_EVAL_NO_GIT=1`` to disable it outright (tests do)
+    -- but no longer silent. `lookup` separates "that ref has no artifact yet"
+    from "that ref does not exist / git is broken", which is the difference
+    between a first run and a typo in the workflow.
     """
 
     root: Path = DEFAULT_ARTIFACTS
     timeout_s: float = 20.0
 
-    def get(self, ref: str, artifact: str) -> dict[str, Any] | None:
-        if os.environ.get(NO_GIT_ENV) == "1":
-            return None
-        target = f"{ref}:{(self.root / f'{artifact}.json').as_posix()}"
+    def _run(self, args: Sequence[str]) -> subprocess.CompletedProcess[str] | None:
         try:
-            out = subprocess.run(
-                ["git", "show", target],
+            return subprocess.run(
+                ["git", *args],
                 capture_output=True,
                 text=True,
                 timeout=self.timeout_s,
@@ -106,24 +179,67 @@ class GitBaselineSource:
             )
         except (OSError, subprocess.SubprocessError):
             return None
+
+    def _ref_exists(self, ref: str) -> bool | None:
+        """True/False if we could ask git, None if we could not."""
+        out = self._run(["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"])
+        if out is None:
+            return None
+        return out.returncode == 0
+
+    def lookup(self, ref: str, artifact: str) -> BaselineLookup:
+        rel = (self.root / f"{artifact}.json").as_posix()
+        where = f"`git show {ref}:{rel}`"
+        if os.environ.get(NO_GIT_ENV) == "1":
+            return BaselineLookup("absent", f"{where}: skipped ({NO_GIT_ENV}=1)")
+        out = self._run(["show", f"{ref}:{rel}"])
+        if out is None:
+            return BaselineLookup("error", f"{where}: git could not be run (missing, or timed out)")
         if out.returncode != 0 or not out.stdout.strip():
-            return None
+            # Ask git whether the *ref* resolves rather than parsing its English
+            # error text, so this classification survives locales and versions.
+            exists = self._ref_exists(ref)
+            stderr = " ".join(out.stderr.split())[:200]
+            if exists is False:
+                return BaselineLookup("error", f"{where}: ref {ref!r} does not resolve -- {stderr}")
+            if exists is None:
+                return BaselineLookup("error", f"{where}: could not verify ref {ref!r} -- {stderr}")
+            return BaselineLookup(
+                "absent", f"{where}: ref {ref!r} resolves but has no {rel} yet -- {stderr}"
+            )
         try:
-            return json.loads(out.stdout)
-        except json.JSONDecodeError:
-            return None
+            payload = json.loads(out.stdout)
+        except json.JSONDecodeError as exc:
+            return BaselineLookup("error", f"{where}: baseline JSON is unparseable: {exc}")
+        return BaselineLookup("found", where, payload)
+
+    def get(self, ref: str, artifact: str) -> dict[str, Any] | None:
+        return self.lookup(ref, artifact).payload
 
 
 @dataclass
 class ChainedBaselineSource:
     sources: Sequence[BaselineSource]
 
-    def get(self, ref: str, artifact: str) -> dict[str, Any] | None:
+    def lookup(self, ref: str, artifact: str) -> BaselineLookup:
+        """First hit wins; otherwise report every place we looked.
+
+        An ``error`` anywhere in the chain is preserved even when a later source
+        merely says ``absent`` -- a broken lookup must not be laundered into a
+        clean "first run" by the source that happened to run after it.
+        """
+        attempts: list[BaselineLookup] = []
         for source in self.sources:
-            found = source.get(ref, artifact)
-            if found is not None:
+            found = source.lookup(ref, artifact)
+            if found.resolved:
                 return found
-        return None
+            attempts.append(found)
+        status: BaselineStatus = "error" if any(a.status == "error" for a in attempts) else "absent"
+        detail = "; ".join(a.detail for a in attempts) or f"no sources configured for {ref!r}"
+        return BaselineLookup(status, detail)
+
+    def get(self, ref: str, artifact: str) -> dict[str, Any] | None:
+        return self.lookup(ref, artifact).payload
 
 
 def default_baseline_source(root: Path = DEFAULT_ARTIFACTS) -> BaselineSource:
@@ -215,6 +331,15 @@ class GateResult:
     relative: bool = True
     message: str = ""
     comparison: ComparisonReport | None = None
+    baseline_status: BaselineStatus = "found"
+    baseline_detail: str = ""
+    ran: bool = True
+    """False when the gate never got to compare anything.
+
+    `passed` alone is ambiguous -- it is also True when the gate skipped -- so
+    every consumer that reports a verdict reads `ran` too. `docs/benchmarks.md`
+    prints SKIPPED rather than PASS when this is False.
+    """
 
     @property
     def delta_abs(self) -> float | None:
@@ -230,19 +355,27 @@ class GateResult:
 
     @property
     def exit_code(self) -> int:
-        return 0 if self.passed else 1
+        if self.passed:
+            return EXIT_OK
+        if self.current is None:
+            return EXIT_NO_CURRENT
+        return EXIT_REGRESSION if self.ran else EXIT_NO_BASELINE
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "passed": self.passed,
+            "ran": self.ran,
             "metric": self.metric,
             "current": self.current.to_dict() if self.current else None,
             "baseline": self.baseline.to_dict() if self.baseline else None,
+            "baseline_status": self.baseline_status,
+            "baseline_detail": self.baseline_detail,
             "delta_abs": self.delta_abs,
             "delta_rel": self.delta_rel,
             "max_regression": self.max_regression,
             "relative": self.relative,
             "message": self.message,
+            "exit_code": self.exit_code,
             "comparison": self.comparison.to_dict() if self.comparison else None,
         }
 
@@ -255,33 +388,79 @@ def check_regression(
     max_regression: float = 0.02,
     relative: bool = True,
     comparison: ComparisonReport | None = None,
+    lookup: BaselineLookup | None = None,
+    require_baseline: bool = False,
 ) -> GateResult:
     """Fail when ``metric`` drops by more than ``max_regression``.
 
     Relative by default -- "drops more than 2%" reads as 2% *of the baseline*.
     Pass ``relative=False`` for an absolute threshold in metric units.
+
+    ``require_baseline`` is the CI setting and the reason this function is not
+    simply ``drop <= allowed``. Without it, a missing baseline skips the gate and
+    passes, which is right on a developer's laptop and on the very first run.
+    With it, the caller is asserting that a baseline *must* exist, so failing to
+    resolve one is a build failure: a gate that returns 0 having compared
+    nothing is indistinguishable from a gate that compared and approved.
+
+    ``lookup`` carries *why* there is no baseline (see `BaselineLookup`). It only
+    affects the message and the recorded status -- ``--require-baseline`` fails on
+    ``absent`` and ``error`` alike, because the caller said one was required
+    either way -- but that message is the difference between a five-second fix
+    and an afternoon.
     """
     if current is None:
         return GateResult(
             passed=False,
+            ran=False,
             metric=metric,
             current=None,
             baseline=baseline,
             max_regression=max_regression,
             relative=relative,
+            baseline_status=lookup.status if lookup else "found",
+            baseline_detail=lookup.detail if lookup else "",
             message=f"no current value for {metric}: run the retrieval eval first",
         )
     if baseline is None:
+        found = lookup or BaselineLookup.none_supplied(metric)
+        because = (
+            "no baseline exists yet (legitimate on a first run)"
+            if found.status == "absent"
+            else "the baseline lookup FAILED -- this is a defect, not a first run"
+        )
+        if require_baseline:
+            return GateResult(
+                passed=False,
+                ran=False,
+                metric=metric,
+                current=current,
+                baseline=None,
+                max_regression=max_regression,
+                relative=relative,
+                baseline_status=found.status,
+                baseline_detail=found.detail,
+                message=(
+                    f"GATE COULD NOT RUN: --require-baseline was given but no baseline for "
+                    f"{metric} could be resolved -- {because}. Tried: {found.detail}. "
+                    f"Current value is {current.format()}; refusing to report a pass for a "
+                    f"comparison that never happened."
+                ),
+            )
         return GateResult(
             passed=True,
+            ran=False,
             metric=metric,
             current=current,
             baseline=None,
             max_regression=max_regression,
             relative=relative,
+            baseline_status=found.status,
+            baseline_detail=found.detail,
             message=(
-                f"no baseline for {metric}; gate skipped and current value recorded as the "
-                f"baseline candidate ({current.format()})"
+                f"SKIPPED (not a pass): no baseline for {metric} -- {because}. "
+                f"Tried: {found.detail}. Current value recorded as the baseline candidate "
+                f"({current.format()}). Pass --require-baseline to make this a failure."
             ),
         )
 
@@ -298,6 +477,8 @@ def check_regression(
         max_regression=max_regression,
         relative=relative,
         comparison=comparison,
+        baseline_status=lookup.status if lookup else "found",
+        baseline_detail=lookup.detail if lookup else "",
         message=(
             f"{verdict}: {metric} {current.format()} vs baseline {baseline.format()} "
             f"(delta {current.mean - baseline.mean:+.4f}, {-pct:+.2f}%; "
@@ -333,19 +514,32 @@ _HEADLINE_COLUMNS: tuple[tuple[str, str], ...] = (
 
 _PREAMBLE = """# Benchmarks
 
-> Every number on this page is `mean [lo, hi]` -- a point estimate with a
-> bootstrap 95% CI. That is rule 5 of `implementation.md` §20, and it is
-> enforced in code: `localmind.eval.stats.Estimate` refuses to be coerced to a
-> bare float, and `benchmark_json()` rejects any row value that is not an
-> `Estimate`. A table of bare point estimates here would be a bug.
+> **Rule 5, and exactly how far it reaches.** Every cell in a *generated* table
+> below is `mean [lo, hi]` -- a point estimate with a bootstrap 95% CI -- and
+> that is enforced in code: `localmind.eval.stats.Estimate` refuses to be
+> coerced to a bare float, and `benchmark_json()` rejects any row value that is
+> not an `Estimate`. A bare point estimate in a generated table is a bug.
+>
+> The **contributed sections** (marked as such, below the generated ones) are
+> rendered by each phase's own harness from the same committed artifacts. They
+> carry CIs on every stochastic measurement, but they also carry exact,
+> non-stochastic quantities -- byte counts, tensor counts, block-occupancy
+> ratios -- as bare numbers, because an interval on an exact count would be
+> noise dressed as rigour. The enforcement above does not cover those, so do not
+> read a missing interval there as an evaded one.
 >
 > Cost per query is $0 -- everything runs locally -- so the resource columns
 > are **CPU-seconds per query** and **peak RSS**, which are the numbers that
 > actually constrain this system.
 
-_This file is generated by `python -m localmind.eval.report`. Edit the harness,
-not the table._
+_This file is generated by `python -m localmind.eval.report`, which composes the
+generated tables with every contributed section in
+`artifacts/benchmarks/sections/`. Edit the harness, not the table._
 """
+
+SECTIONS_DIRNAME = "sections"
+SUPERSEDED_KEY = "superseded"
+SUPERSEDED_BY_KEY = "superseded_by"
 
 
 def _fmt(value: Estimate | None, digits: int = 3) -> str:
@@ -368,6 +562,104 @@ def _iter_artifacts(root: Path) -> list[tuple[Path, dict[str, Any]]]:
     return out
 
 
+_PRIMARY_LABEL_KEYS = ("name", "config", "system", "label", "id", "tokenizer", "bench")
+_QUALIFIER_LABEL_KEYS = ("variant", "arm")
+
+
+def _row_label(row: Mapping[str, Any]) -> str:
+    """Name a row from whichever identifying key its phase happens to use.
+
+    `bench` was missing from this list, which is why every inference and model
+    row rendered as a literal `**?**` -- 72 unlabelled tables in the deliverable.
+    A qualifier (`variant`/`arm`) is appended when present, because `kv_cache`
+    alone appears eleven times in `inference.json` and the variant is the only
+    thing that tells those rows apart.
+    """
+    primary = next((str(row[k]) for k in _PRIMARY_LABEL_KEYS if row.get(k)), "")
+    qualifier = next((str(row[k]) for k in _QUALIFIER_LABEL_KEYS if row.get(k)), "")
+    parts = [primary] + ([qualifier] if qualifier and qualifier != primary else [])
+    return " / ".join(p for p in parts if p) or "?"
+
+
+def _superseded_reason(path: Path, payload: Mapping[str, Any]) -> str | None:
+    """Why this artifact has been retracted, or None if it still counts.
+
+    Read from the artifact's own `superseded` field, with the `*_superseded_*`
+    filename convention as a backstop: a retracted run must not get republished
+    as a peer result just because someone forgot to set the field. It used to
+    be republished with no marker at all, 55 rows of withdrawn numbers sitting
+    beside the good ones and distinguishable only by a filename stem.
+    """
+    marker = payload.get(SUPERSEDED_KEY)
+    if isinstance(marker, str) and marker.strip():
+        return marker.strip()
+    if marker is True:
+        return "marked superseded in the artifact, with no reason recorded"
+    if SUPERSEDED_KEY in path.stem:
+        return (
+            f"the filename marks this run superseded, but `{path.name}` carries no "
+            f"`{SUPERSEDED_KEY}` field explaining why"
+        )
+    return None
+
+
+def _retraction_block(path: Path, payload: Mapping[str, Any], reason: str) -> list[str]:
+    """A retraction notice instead of the data. The file stays; the numbers do not.
+
+    Rendering the rows under a banner was the other option and it is weaker: the
+    banner scrolls off after twenty lines and the remaining 300 lines of tables
+    look exactly like a result. The audit trail is the JSON on disk, which is
+    still committed and still cited here by path.
+    """
+    superseded_by = str(payload.get(SUPERSEDED_BY_KEY, "")).strip()
+    lines = [
+        f"## RETRACTED -- {payload.get('name', path.stem)} (`{path.stem}`)",
+        "",
+        "> **These numbers were withdrawn. Do not cite anything from this run.**",
+        f"> Reason: {reason}",
+    ]
+    if superseded_by:
+        lines.append(f"> Superseded by: `{superseded_by}`")
+    lines += [
+        f"> The artifact is kept at `{path.as_posix()}` so the correction is auditable;"
+        " its rows are deliberately not reproduced here.",
+        "",
+    ]
+    return lines
+
+
+def read_contributed_sections(root: Path = DEFAULT_ARTIFACTS) -> list[tuple[Path, str]]:
+    """Markdown contributed by phases whose tables this module cannot generate.
+
+    `docs/benchmarks.md` has three other producers -- `inference.bench`,
+    `model.transformer` and `post` -- whose tables encode phase-specific
+    structure (speedup-vs-naive columns, GGUF export status, a not-run matrix)
+    that a generic `metric | value` renderer cannot express. They used to `open(
+    ..., "a")` on the deliverable directly, so the documented regeneration
+    command silently deleted all three.
+
+    Composition is now explicit and one-directional: each producer writes the
+    section it owns to `artifacts/benchmarks/sections/<order>-<phase>.md`, and
+    this module concatenates them in filename order. Nobody appends to the
+    deliverable; regeneration is idempotent and no producer can destroy another's
+    work by running second.
+    """
+    directory = root / SECTIONS_DIRNAME
+    if not directory.is_dir():
+        return []
+    return [(p, p.read_text(encoding="utf-8")) for p in sorted(directory.glob("*.md"))]
+
+
+def write_contributed_section(
+    name: str, markdown: str, root: Path | str = DEFAULT_ARTIFACTS
+) -> Path:
+    """Record one producer's section. Overwrites its own file, touches nothing else."""
+    path = Path(root) / SECTIONS_DIRNAME / f"{name}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(markdown.rstrip() + "\n", encoding="utf-8")
+    return path
+
+
 def _row_values(payload: Mapping[str, Any]) -> list[tuple[str, dict[str, Estimate]]]:
     """Read rows from any phase's artifact, skipping cells we cannot parse.
 
@@ -379,16 +671,7 @@ def _row_values(payload: Mapping[str, Any]) -> list[tuple[str, dict[str, Estimat
     for row in payload.get("rows", []) or []:
         if not isinstance(row, Mapping):
             continue
-        name = str(
-            row.get("name")
-            or row.get("config")
-            or row.get("system")
-            or row.get("variant")
-            or row.get("label")
-            or row.get("arm")
-            or row.get("id")
-            or "?"
-        )
+        name = _row_label(row)
         values: dict[str, Estimate] = {}
         for key, value in row.items():
             if not isinstance(value, Mapping) or "mean" not in value:
@@ -407,11 +690,23 @@ def regenerate_benchmarks_md(
     *,
     gate: GateResult | None = None,
 ) -> Path:
-    """Rebuild `docs/benchmarks.md` from everything in `artifacts/benchmarks/`."""
+    """Rebuild `docs/benchmarks.md` from everything in `artifacts/benchmarks/`.
+
+    Composition, in order: the generated tables (from `*.json` here), then every
+    contributed section (from `sections/*.md` here). Retracted artifacts
+    contribute a retraction notice and nothing else, and never reach the headline
+    table. The output is a pure function of the committed inputs, so running this
+    twice is a no-op and running it never destroys another producer's section.
+    """
     artifacts = _iter_artifacts(artifacts_root)
+    retracted = {
+        path: reason for path, payload in artifacts if (reason := _superseded_reason(path, payload))
+    }
     merged: dict[str, dict[str, Estimate]] = {}
     hardware: set[str] = set()
-    for _, payload in artifacts:
+    for path, payload in artifacts:
+        if path in retracted:
+            continue  # withdrawn numbers must never feed the headline table
         hardware.add(str(payload.get("hardware", "")))
         for name, values in _row_values(payload):
             merged.setdefault(name, {}).update(values)
@@ -435,14 +730,18 @@ def regenerate_benchmarks_md(
     ]
 
     if gate is not None:
+        # SKIPPED is its own word. A gate that compared nothing has not passed,
+        # and printing PASS there is how this document came to advertise
+        # protection that had never once been exercised.
+        status = "PASS" if gate.passed and gate.ran else ("SKIPPED" if gate.passed else "FAIL")
         lines += [
             "## CI gate",
             "",
             f"- metric: `{gate.metric}`",
             f"- budget: {gate.max_regression:.2%} ({'relative' if gate.relative else 'absolute'})",
             f"- current: {_fmt(gate.current)}",
-            f"- baseline: {_fmt(gate.baseline)}",
-            f"- status: **{'PASS' if gate.passed else 'FAIL'}** -- {gate.message}",
+            f"- baseline: {_fmt(gate.baseline)} (lookup: {gate.baseline_status})",
+            f"- status: **{status}** -- {gate.message}",
             "",
         ]
         if gate.comparison is not None:
@@ -454,6 +753,9 @@ def regenerate_benchmarks_md(
             ]
 
     for path, payload in artifacts:
+        if path in retracted:
+            lines += _retraction_block(path, payload, retracted[path])
+            continue
         # Two phases can legitimately name a benchmark the same thing; the file
         # stem disambiguates so headings stay unique.
         bench_name = str(payload.get("name", path.stem))
@@ -488,6 +790,21 @@ def regenerate_benchmarks_md(
             "stochastic; treat single-seed rows as provisional.",
             "",
         ]
+
+    contributed = read_contributed_sections(artifacts_root)
+    if contributed:
+        lines += [
+            "---",
+            "",
+            "# Contributed sections",
+            "",
+            "Rendered by each phase's own harness from the artifacts above, and "
+            "composed here rather than appended to this file. Source: "
+            f"`{(artifacts_root / SECTIONS_DIRNAME).as_posix()}/`.",
+            "",
+        ]
+        for path, text in contributed:
+            lines += [f"<!-- contributed by {path.as_posix()} -->", text.rstrip(), ""]
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
@@ -568,6 +885,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             "JSON, then compare against it."
         ),
     )
+    parser.add_argument(
+        "--require-baseline",
+        action="store_true",
+        help=(
+            "treat an unresolvable baseline as a FAILURE (exit 3) instead of a skip. Set this "
+            "in CI: without it the gate exits 0 when it could not find anything to compare "
+            "against, which is indistinguishable from a genuine pass. Leave it off locally, "
+            "where a missing baseline is normal."
+        ),
+    )
     parser.add_argument("--max-regression", type=float, default=0.02)
     parser.add_argument("--metric", default=GATE_METRIC)
     parser.add_argument("--artifact", default=GATE_ARTIFACT, help="artifact stem to gate on")
@@ -586,29 +913,50 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"[eval.report] {current_path} not found -- run `just eval-retrieval` first",
             file=sys.stderr,
         )
-        return 2
+        return EXIT_NO_CURRENT
     current_payload = json.loads(current_path.read_text(encoding="utf-8"))
     if args.baseline_file:
+        # An explicitly named file that is missing or corrupt is operator error,
+        # so it fails closed regardless of --require-baseline. Only *discovery*
+        # of a baseline is allowed to come up empty.
         baseline_path = Path(args.baseline_file)
         if not baseline_path.exists():
             print(f"[eval.report] baseline file {baseline_path} not found", file=sys.stderr)
-            return 2
-        baseline_payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+            return EXIT_NO_CURRENT
+        try:
+            payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(
+                f"[eval.report] baseline file {baseline_path} is unreadable: {exc}",
+                file=sys.stderr,
+            )
+            return EXIT_NO_CURRENT
+        lookup = BaselineLookup("found", f"baseline file `{baseline_path.as_posix()}`", payload)
     else:
-        baseline_payload = default_baseline_source(root).get(args.baseline, args.artifact)
+        lookup = default_baseline_source(root).lookup(args.baseline, args.artifact)
+    baseline_payload = lookup.payload
 
     comparison = (
         paired_against_baseline(current_payload, baseline_payload, args.metric, seed=args.seed)
         if baseline_payload
         else None
     )
+    baseline_metric = extract_metric(baseline_payload, args.metric) if baseline_payload else None
+    if lookup.resolved and baseline_metric is None:
+        # We found the artifact and it does not carry the metric we gate on.
+        # That is a broken baseline, not a missing one -- keep them apart.
+        lookup = BaselineLookup(
+            "error", f"{lookup.detail}: resolved, but contains no {args.metric!r} metric"
+        )
     gate = check_regression(
         extract_metric(current_payload, args.metric),
-        extract_metric(baseline_payload, args.metric) if baseline_payload else None,
+        baseline_metric,
         metric=args.metric,
         max_regression=args.max_regression,
         relative=not args.absolute,
         comparison=comparison,
+        lookup=lookup,
+        require_baseline=args.require_baseline,
     )
 
     print(gate.message)
