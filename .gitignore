@@ -26,3 +26,6 @@ mlruns/
 # local env
 .env
 *.log
+
+# Local agent guidance; deliberately not published.
+CLAUDE.md
