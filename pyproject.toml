@@ -36,6 +36,15 @@ dev = [
   "ruff>=0.5", "pyright>=1.1.370", "locust>=2.29",
 ]
 
+# Console entry points. `python -m localmind.train.loop` emits a RuntimeWarning from runpy,
+# because localmind/train/__init__.py imports the module before runpy executes it. The warning is
+# harmless but reads like an error, so these give a clean invocation instead.
+[project.scripts]
+localmind-train = "localmind.train.loop:main"
+localmind-prepare-data = "localmind.data.prepare:main"
+localmind-eval-retrieval = "localmind.eval.retrieval:main"
+localmind-eval-report = "localmind.eval.report:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

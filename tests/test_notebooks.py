@@ -75,3 +75,26 @@ def test_no_hardcoded_secrets(path: Path) -> None:
         for line in text.splitlines():
             if token in line and "get_secret" not in line and "HF_TOKEN" not in line:
                 raise AssertionError(f"{path.name}: possible hardcoded secret: {line.strip()[:80]}")
+
+
+@pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
+def test_shell_commands_are_single_line(path: Path) -> None:
+    r"""No backslash continuations in `!` cells.
+
+    Writing notebook JSON turned an intended `\<newline>` continuation into a literal
+    backslash followed by the letter `n`, so the shell received `\n` as an argument:
+    `error: unrecognized arguments: n`. The notebook parsed, the cell compiled, and it
+    still failed on the user's machine. One line per command removes the failure mode.
+    """
+    nb = json.loads(path.read_text(encoding="utf-8"))
+    offenders: list[str] = []
+    for i, cell in enumerate(nb["cells"]):
+        if cell.get("cell_type") != "code":
+            continue
+        for line in cell.get("source", []):
+            body = line.rstrip("\n")
+            if not body.lstrip().startswith(("!", "# !")):
+                continue
+            if body.endswith("\\") or body.endswith("\n"):
+                offenders.append(f"  cell {i}: {body[:90]}")
+    assert not offenders, f"{path.name}: shell commands must be one line:\n" + "\n".join(offenders)
