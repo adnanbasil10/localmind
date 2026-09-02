@@ -48,6 +48,10 @@ services:
       LOCALMIND_PG_DSN: postgresql://localmind:localmind@postgres:5432/localmind
       LOCALMIND_REDIS_URL: redis://redis:6379/0
       OTEL_EXPORTER_OTLP_ENDPOINT: http://phoenix:4317
+      # The image serves localmind.api.demo, which indexes the packaged sample corpus at startup,
+      # so `docker compose up` answers queries instead of refusing for lack of a retriever.
+      # Allow the local Next.js dev server to call it.
+      LOCALMIND_CORS_ORIGINS: http://localhost:3000
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }

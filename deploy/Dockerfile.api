@@ -54,6 +54,11 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=2).status==200 else 1)"
 
-# The production gateway. It starts with no retriever injected and refuses cleanly until one is
-# supplied — see deploy/demo_server.py for a runnable demo with the sample corpus indexed.
-CMD ["uvicorn", "localmind.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Serves the demo app: the same gateway, with the packaged sample corpus indexed at startup, so
+# `docker run` is useful out of the box. The corpus ships inside the wheel and is read via
+# importlib.resources, so nothing extra is copied here.
+#
+# For the bare gateway with no retriever (production, where you inject your own), override:
+#     docker run … localmind-api uvicorn localmind.api.main:app --host 0.0.0.0 --port 8000
+# Point it at your own corpus with -e LOCALMIND_DEMO_CORPUS=/data/corpus.jsonl (mount it first).
+CMD ["uvicorn", "localmind.api.demo:app", "--host", "0.0.0.0", "--port", "8000"]
