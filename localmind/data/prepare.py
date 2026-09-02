@@ -19,7 +19,7 @@ at module scope, and works with any object (real or fake) that has `encode` and
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -411,8 +411,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not kept:
                 raise SystemExit("--exclude removed every source")
             total = sum(s.weight for s in kept)
-            for s in kept:  # renormalise so the remaining shares still sum to 1.0
-                s.weight = s.weight / total
+            # SourceSpec is frozen, so rebuild rather than mutate.
+            kept = [replace(s, weight=s.weight / total) for s in kept]
             print(
                 f"[prepare] excluded {sorted(dropped)}; "
                 f"renormalised {len(kept)} source(s): "
