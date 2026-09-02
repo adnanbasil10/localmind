@@ -1,0 +1,39 @@
+# §9 5a Phase 5 — SFT on the three ControlPlane jobs (router / rewriter / grader).
+# Teacher data comes from Qwen2.5-3B-Instruct on a Kaggle T4 via vLLM; see
+# notebooks/kaggle/02_distill.ipynb. Read by localmind.post.sft.SFTConfig.
+model_config: configs/model/31m.yaml
+teacher: Qwen/Qwen2.5-3B-Instruct
+n_examples: 40000            # §9 5a: "~30-50k instruction pairs"
+job_mix:                     # the three production jobs, evenly weighted
+  router:   0.34
+  rewriter: 0.33
+  grader:   0.33
+seq_len: 1024
+micro_batch_size: 8
+epochs: 2
+
+# §9 5a: "cosine decay from 10% of pretrain LR". pretrain peak is 3.0e-3
+# (configs/train/pretrain.yaml), so the SFT peak is 3.0e-4. Restated rather than
+# cross-referenced so this run is self-describing and hash-loggable on its own.
+pretrain_peak_lr: 3.0e-3
+peak_lr_frac_of_pretrain: 0.1
+schedule: cosine
+warmup_frac: 0.03
+min_lr_ratio: 0.1
+
+optimizer: adamw
+betas: [0.9, 0.95]
+weight_decay: 0.1
+grad_clip: 1.0
+precision: fp16              # ADR 0001: T4 is SM 7.5, no bf16 tensor cores
+
+mask_prompt_tokens: true     # §9 5a: train only on assistant spans
+boundary_masking: true       # packed rows must not supervise across an example seam
+
+# §9 5a: "hand-verify a stratified sample and report agreement with the teacher".
+# Falling below the gate is a warning that blocks training, not a log line.
+verify_sample_size: 300
+verify_min_agreement: 0.90
+
+out_dir: artifacts/post/sft
+seed: 1337

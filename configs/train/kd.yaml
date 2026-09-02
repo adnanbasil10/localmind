@@ -1,0 +1,41 @@
+# §9 5b / ADR 0005 — three distillation arms. Read by localmind.post.kd.KDConfig.
+# The notebook selects the arm on the command line:
+#   python -m localmind.post.kd --config configs/train/kd.yaml --arm sequence
+#   python -m localmind.post.kd --config configs/train/kd.yaml --arm on-policy
+#   python -m localmind.post.kd --config configs/train/kd.yaml --arm logit --top-k 64 --alpha 0.7
+model_config: configs/model/31m.yaml
+teacher_model_config: configs/model/100m_teacher.yaml   # arm 3 only: same tokenizer
+teacher: Qwen/Qwen2.5-3B-Instruct                       # arms 1-2: cross-tokenizer, text only
+arm: sequence                # arm 1 is the primary; ADR 0005
+
+# Arm 3 (same-tokenizer logit KD). Qwen's ~151k vocab does not align with our 16,384,
+# so top-K logit KL is only defined against our own LocalMind-100M sibling.
+top_k: 64                    # §9 5b: K=64
+alpha: 0.7                   # §9 5b: L = alpha*KL + (1-alpha)*CE
+temperature: 1.0
+kl_direction: forward        # KL(teacher || student): the standard KD objective
+
+n_examples: 20000            # ADR 0005 storage note is sized on 20k x 256 x top-64
+seq_len: 256
+micro_batch_size: 8
+epochs: 1
+
+peak_lr: 3.0e-4
+warmup_frac: 0.03
+min_lr_ratio: 0.1
+betas: [0.9, 0.95]
+weight_decay: 0.1
+grad_clip: 1.0
+precision: fp16              # ADR 0001
+
+# Arm 2 (on-policy correction): sample from the STUDENT, teacher rewrites, train on the
+# correction. Repeated because the student's distribution moves after every round.
+on_policy_rounds: 3
+on_policy_samples_per_round: 512
+student_temperature: 0.8
+
+# ADR 0005: 20k x 256 x 64 at fp16 values + uint16 indices is ~1.31 GB. Push to HF Hub;
+# do not try to hold it in a Kaggle session.
+logit_dump_dir: artifacts/post/kd/teacher_topk
+out_dir: artifacts/post/kd
+seed: 1337

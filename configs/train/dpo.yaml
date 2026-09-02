@@ -1,0 +1,30 @@
+# §9 5c — DPO on the query rewriter. Read by localmind.post.dpo.DPOConfig.
+# The rewriter is the only one of the three jobs whose output is a preference rather
+# than a label; the router and grader have SFT targets, not preferences.
+model_config: configs/model/31m.yaml
+job: rewriter
+n_pairs: 5000                # §9 5c: "~5k preference pairs"
+beta: 0.1                    # §9 5c: beta=0.1
+label_smoothing: 0.0         # 0.0 is plain DPO; raise for known-noisy preference labels
+length_normalize: false      # the DPO paper's formulation is a summed log-prob
+
+seq_len: 256
+micro_batch_size: 8
+epochs: 1
+
+peak_lr: 5.0e-6              # DPO diverges at SFT learning rates
+warmup_frac: 0.1
+min_lr_ratio: 0.1
+betas: [0.9, 0.95]
+weight_decay: 0.0
+grad_clip: 1.0
+precision: fp16              # ADR 0001
+
+# §9 5c: "Track reward margin and KL from the reference policy; runaway KL means your
+# beta is wrong." Crossing this raises an explicit warning on DPOResult. Measured in
+# nats PER TOKEN — a per-sequence KL would scale with response length, so no fixed
+# threshold could mean the same thing on a 10-token rewrite and a 200-token one.
+kl_warn_threshold: 0.5
+
+out_dir: artifacts/post/dpo
+seed: 1337

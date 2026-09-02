@@ -1,0 +1,28 @@
+# §9 5d — GRPO with verifiable rewards. Read by localmind.post.grpo.GRPOConfig.
+# Reward = strict-JSON format valid AND correct against ground truth. No reward model,
+# no judge calls, no value network — which is why this is nearly free at 31M scale.
+model_config: configs/model/31m.yaml
+job: grader                  # the job with a programmatic reward
+group_size: 8                # §9 5d: "Group size 8, no value network"
+use_value_network: false     # stated explicitly rather than left to be inferred
+
+n_prompts: 2000
+max_new_tokens: 32
+sampling_temperature: 1.0    # groups must actually differ or every advantage is zero
+
+clip_eps: 0.2
+kl_coef: 0.0                 # verifiable rewards cannot be gamed, so no KL tether needed
+format_weight: 0.5           # reward = format_weight*format + correctness_weight*correct
+correctness_weight: 0.5
+
+seq_len: 256
+peak_lr: 1.0e-6
+warmup_frac: 0.1
+min_lr_ratio: 1.0            # constant after warmup: RL is unstable under LR decay here
+betas: [0.9, 0.95]
+weight_decay: 0.0
+grad_clip: 1.0
+precision: fp16              # ADR 0001
+
+out_dir: artifacts/post/grpo
+seed: 1337
