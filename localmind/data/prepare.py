@@ -321,3 +321,122 @@ def prepare_shards(
     )
     manifest.to_json(output_dir / "manifest.json")
     return manifest
+
+
+# ======================================================================================
+# CLI — `python -m localmind.data.prepare`
+# ======================================================================================
+# §4's definition of done is that a fresh Kaggle notebook trains without editing anything.
+# That needs one command that turns a mixture config into shards on disk, including
+# training the tokenizer if one does not exist yet. Everything below is glue over the
+# functions above; the pipeline itself is unchanged.
+
+
+def _smoke_corpus(n: int = 400) -> list[str]:
+    """A tiny deterministic corpus so the pipeline can be exercised with no network."""
+    import random
+
+    rng = random.Random(1337)
+    subjects = ["the cat", "a robot", "the river", "my friend", "the engine", "a bird"]
+    verbs = ["found", "carried", "repaired", "counted", "followed", "remembered"]
+    objects = ["a small key", "three red stones", "the broken clock", "an old map"]
+    places = ["under the bridge", "in the quiet town", "beside the tall grass"]
+    out = []
+    for i in range(n):
+        sents = [
+            f"{rng.choice(subjects)} {rng.choice(verbs)} {rng.choice(objects)} "
+            f"{rng.choice(places)}."
+            for _ in range(rng.randint(3, 7))
+        ]
+        out.append(f"Story {i}. " + " ".join(sents))
+    return out
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        prog="python -m localmind.data.prepare",
+        description="Build tokenized uint16 shards from a data mixture (§7).",
+    )
+    ap.add_argument("--mixture", default="configs/data/mixture.yaml", help="mixture config")
+    ap.add_argument("--out", default="data/shards", help="output directory for shards")
+    ap.add_argument("--tokenizer", default="data/tokenizer.json", help="train here if missing")
+    ap.add_argument("--vocab-size", type=int, default=16384)
+    ap.add_argument("--seq-len", type=int, default=None, help="defaults to the mixture's seq_len")
+    ap.add_argument("--n-docs", type=int, default=20000, help="documents to draw from the mixture")
+    ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument(
+        "--smoke",
+        action="store_true",
+        help="use a tiny built-in corpus instead of the mixture: no network, seconds not hours",
+    )
+    ap.add_argument("--no-dedup", action="store_true", help="skip MinHash (needs datasketch)")
+    args = ap.parse_args(argv)
+
+    from localmind.tokenizer.tokenizer import Tokenizer
+
+    out_dir = Path(args.out)
+    tok_path = Path(args.tokenizer)
+
+    if args.smoke:
+        texts = _smoke_corpus()
+        seq_len = args.seq_len or 256
+        seed = args.seed if args.seed is not None else 1337
+        sources = [
+            SourceSpec(
+                name="smoke",
+                weight=1.0,
+                license="none",
+                factory=lambda: (RawDoc(text=t, source="smoke", license="none") for t in texts),
+            )
+        ]
+        n_docs = len(texts)
+    else:
+        cfg = MixtureConfig.from_yaml(args.mixture)
+        sources = sources_from_mixture_config(cfg)
+        seq_len = args.seq_len or cfg.seq_len
+        seed = args.seed if args.seed is not None else cfg.seed
+        n_docs = args.n_docs
+        texts = None
+
+    # Tokenizer: reuse if present, otherwise train and save so later runs are reproducible.
+    if tok_path.is_file():
+        tokenizer = Tokenizer.load(tok_path)
+        print(f"[prepare] loaded tokenizer {tok_path} (vocab {tokenizer.vocab_size})")
+    else:
+        sample = (
+            texts
+            if texts is not None
+            else [
+                d.text
+                for _, d in zip(
+                    range(2000), iter_mixture(sources, seed=seed, n_docs=2000), strict=False
+                )
+            ]
+        )
+        print(f"[prepare] training tokenizer on {len(sample)} docs -> vocab {args.vocab_size}")
+        tokenizer = Tokenizer.train(sample, vocab_size=args.vocab_size)
+        tok_path.parent.mkdir(parents=True, exist_ok=True)
+        tokenizer.save(tok_path)
+        print(f"[prepare] saved tokenizer -> {tok_path} (vocab {tokenizer.vocab_size})")
+
+    print(f"[prepare] building shards: n_docs={n_docs} seq_len={seq_len} seed={seed}")
+    manifest = prepare_shards(
+        sources,
+        tokenizer,
+        out_dir,
+        seq_len=seq_len,
+        seed=seed,
+        n_docs=n_docs,
+        enable_near_dedup=not args.no_dedup,
+    )
+    print(
+        f"[prepare] done: {len(manifest.shards)} shard(s), "
+        f"{manifest.total_rows:,} rows, {manifest.total_tokens:,} tokens -> {out_dir}"
+    )
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

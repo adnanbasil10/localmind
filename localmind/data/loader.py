@@ -28,7 +28,7 @@ import numpy as np
 
 from localmind.data.packing import doc_ids_from_boundaries
 
-__all__ = ["PackedShardLoader"]
+__all__ = ["PackedShardLoader", "TorchBatchLoader", "build_loaders"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,3 +173,101 @@ class PackedShardLoader:
             self._step += 1
 
         return xs, ys, docs
+
+
+class TorchBatchLoader:
+    """Wrap a `PackedShardLoader` so it yields torch tensors instead of numpy arrays.
+
+    `localmind.train.loop` calls `.to(device)` on each batch, so it needs tensors, while
+    this module stays numpy-only by design (the data package must import without torch).
+    This adapter is the seam between the two, and it forwards `state_dict` /
+    `load_state_dict` unchanged so bit-exact resume still works through it.
+    """
+
+    def __init__(self, inner: PackedShardLoader) -> None:
+        self.inner = inner
+
+    def __iter__(self) -> TorchBatchLoader:
+        return self
+
+    def __next__(self):
+        import torch
+
+        x, y, doc_ids = next(self.inner)
+        return (
+            torch.from_numpy(x.astype("int64", copy=False)),
+            torch.from_numpy(y.astype("int64", copy=False)),
+            torch.from_numpy(doc_ids.astype("int64", copy=False)),
+        )
+
+    next_batch = __next__
+
+    # -- everything else delegates, so resume and introspection are unaffected ----
+    def state_dict(self) -> dict:
+        return self.inner.state_dict()
+
+    def load_state_dict(self, state: dict) -> None:
+        self.inner.load_state_dict(state)
+
+    def __getattr__(self, name: str):
+        return getattr(self.inner, name)
+
+
+def build_loaders(
+    *,
+    seq_len: int,
+    micro_batch_size: int,
+    rank: int = 0,
+    world_size: int = 1,
+    seed: int,
+    shard_dir: str | Path | None = None,
+    val_shard_dir: str | Path | None = None,
+    use_doc_boundaries: bool = True,
+) -> tuple[TorchBatchLoader, TorchBatchLoader | None]:
+    """Build `(train_loader, val_loader)` for `localmind.train.loop`.
+
+    This is the factory the training loop imports. It exists because `loop.py` and this
+    module were written against a shared Protocol rather than a shared function, and the
+    loop calls `build_loaders(...)` -- without it, training against real shards raises an
+    ImportError whose message unhelpfully blames missing shards.
+
+    `shard_dir` defaults to `$LOCALMIND_SHARD_DIR`, else `data/shards`. A sibling
+    `data/shards/val` is picked up automatically as the validation set when present, so
+    `python -m localmind.data.prepare` followed by `python -m localmind.train.loop` works
+    with no extra wiring.
+
+    Each rank is given a distinct seed so data-parallel workers do not draw identical
+    batches; the loader's own shuffling is otherwise unchanged and still resumable.
+    """
+    import os
+
+    root = Path(shard_dir or os.environ.get("LOCALMIND_SHARD_DIR") or "data/shards")
+    if not root.exists():
+        raise FileNotFoundError(
+            f"no shard directory at {root}. Build one with:\n"
+            f"    python -m localmind.data.prepare --out {root}\n"
+            f"or run the training loop with --synthetic to skip real data entirely."
+        )
+
+    train = PackedShardLoader(
+        root,
+        seed=seed + rank,
+        batch_size=micro_batch_size,
+        use_doc_boundaries=use_doc_boundaries,
+    )
+    if train.seq_len != seq_len:
+        raise ValueError(
+            f"config seq_len={seq_len} but shards in {root} were packed at "
+            f"seq_len={train.seq_len}. Rebuild with --seq-len {seq_len}."
+        )
+
+    val_root = Path(val_shard_dir) if val_shard_dir else root / "val"
+    val: PackedShardLoader | None = None
+    if val_root.exists():
+        val = PackedShardLoader(
+            val_root,
+            seed=seed + rank,
+            batch_size=micro_batch_size,
+            use_doc_boundaries=use_doc_boundaries,
+        )
+    return TorchBatchLoader(train), (TorchBatchLoader(val) if val is not None else None)
