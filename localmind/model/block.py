@@ -35,8 +35,11 @@ class TransformerBlock(nn.Module):
         rope: RotaryEmbedding,
         past_kv: KVCache | None = None,
         use_cache: bool = False,
+        doc_ids: Tensor | None = None,
     ) -> tuple[Tensor, KVCache | None]:
-        attn_out, present = self.attn(self.attn_norm(x), rope, past_kv=past_kv, use_cache=use_cache)
+        attn_out, present = self.attn(
+            self.attn_norm(x), rope, past_kv=past_kv, use_cache=use_cache, doc_ids=doc_ids
+        )
         x = x + attn_out
         x = x + self.ffn(self.ffn_norm(x))
         return x, present

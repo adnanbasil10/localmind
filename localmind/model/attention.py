@@ -244,6 +244,7 @@ class CausalSelfAttention(nn.Module):
         past_kv: KVCache | None = None,
         use_cache: bool = False,
         backend: AttnBackend | None = None,
+        doc_ids: Tensor | None = None,
     ) -> tuple[Tensor, KVCache | None]:
         """
         Args:
@@ -254,6 +255,12 @@ class CausalSelfAttention(nn.Module):
             past_kv: cached ``(k, v)`` from previous steps, for incremental decoding.
             use_cache: return the concatenated ``(k, v)`` for the next step.
             backend: one-shot override of ``self.backend``.
+            doc_ids: optional per-position document segment ids for packed sequences
+                (§7/§8). When given, attention is restricted to the same document
+                *and* the causal past -- a block-diagonal causal mask. When ``None``
+                the behaviour is exactly the plain-causal path. With a KV cache,
+                ``doc_ids`` must cover the whole context (past + current), i.e. width
+                ``past_len + T``; see `_doc_causal_mask`.
 
         Returns:
             ``(output (B, T, d_model), present_kv or None)``.
@@ -285,7 +292,17 @@ class CausalSelfAttention(nn.Module):
 
         kv_len = k.shape[-2]
 
-        if chosen == "naive":
+        if doc_ids is not None:
+            # Packed-sequence path: one explicit mask, identical for every backend.
+            # Causality is folded INTO the mask, so `is_causal` must be False -- SDPA
+            # rejects combining an explicit mask with is_causal=True, and it would
+            # double-apply the triangle anyway.
+            doc_mask = self._doc_causal_mask(doc_ids, t, kv_len, x.device)
+            if chosen == "naive":
+                out = self._naive(q, k, v, doc_mask)
+            else:
+                out = self._sdpa(q, k, v, doc_mask, False, chosen)
+        elif chosen == "naive":
             # The naive reference always gets an explicit mask. A missing causal mask
             # here is the §6 trap where the loss looks suspiciously *good*.
             naive_mask = None if t == 1 else self._causal_mask(t, kv_len, x.device)
@@ -296,6 +313,36 @@ class CausalSelfAttention(nn.Module):
 
         out = out.transpose(1, 2).contiguous().view(b, t, self.n_heads * self.head_dim)
         return self.wo(out), present
+
+    def _doc_causal_mask(
+        self, doc_ids: Tensor, q_len: int, kv_len: int, device: torch.device
+    ) -> Tensor:
+        """Block-diagonal causal mask: ``(B, 1, q_len, kv_len)`` bool, True = attend.
+
+        ``mask[b, 0, i, j]`` is True iff position ``j`` is in the causal past of ``i``
+        **and** both positions belong to the same document. This is what stops
+        attention bleeding across document boundaries in a packed row (§7); the naive
+        packing ablation is simply not passing ``doc_ids`` at all.
+
+        Rectangular by construction, so it is correct with a KV cache: the queries are
+        the last ``q_len`` positions of the context, the keys are all ``kv_len`` of
+        them. That requires ``doc_ids`` to describe the WHOLE context, which is why a
+        width mismatch is a hard error rather than a broadcast.
+        """
+        if doc_ids.dim() != 2:
+            raise ValueError(f"doc_ids must be (B, T), got shape {tuple(doc_ids.shape)}")
+        if doc_ids.shape[-1] != kv_len:
+            raise ValueError(
+                f"doc_ids has width {doc_ids.shape[-1]} but the attention context is "
+                f"{kv_len} positions ({kv_len - q_len} cached + {q_len} new). With a KV "
+                f"cache, doc_ids must cover the whole context (past + current), not just "
+                f"the new tokens."
+            )
+        doc_ids = doc_ids.to(device)
+        # Queries are the trailing q_len positions of the context.
+        doc_q = doc_ids[:, kv_len - q_len :]
+        same_doc = (doc_q[:, :, None] == doc_ids[:, None, :])[:, None, :, :]
+        return self._causal_mask(q_len, kv_len, device) & same_doc
 
     def _sdpa_mask(
         self, q_len: int, kv_len: int, device: torch.device

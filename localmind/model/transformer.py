@@ -115,6 +115,7 @@ class LocalMindTransformer(nn.Module):
         targets: Tensor | None = None,
         past_kvs: list[KVCache] | None = None,
         use_cache: bool = False,
+        doc_ids: Tensor | None = None,
     ) -> ModelOutput:
         """
         Args:
@@ -124,6 +125,21 @@ class LocalMindTransformer(nn.Module):
                 `-100` to mask a position out of the loss.
             past_kvs: per-layer `(k, v)` caches from a previous call.
             use_cache: return fresh per-layer caches in `ModelOutput.kv_caches`.
+            doc_ids: optional `(B, T)` per-position document segment ids for packed
+                sequences, as produced by
+                `localmind.data.packing.doc_ids_from_boundaries`. When supplied,
+                attention is block-diagonal: a token can only attend to its causal
+                past *within its own document*, which is the §7 requirement that
+                packing "pass document boundaries so attention doesn't cross them".
+                Passing `None` is the naive-packing ablation arm and is byte-identical
+                to the plain causal model.
+
+                Loss masking is NOT a substitute for this: masking the loss stops
+                boundary positions contributing gradients, but tokens from document A
+                would still *attend* to document B.
+
+                With `past_kvs`, `doc_ids` must cover the whole context
+                (`past_len + T`), not just the new tokens; a width mismatch raises.
         """
         b, t = input_ids.shape
         past_len = 0 if past_kvs is None else past_kvs[0][0].shape[-2]
@@ -132,11 +148,21 @@ class LocalMindTransformer(nn.Module):
                 f"sequence of {past_len + t} exceeds max_seq_len={self.cfg.max_seq_len}"
             )
 
+        if doc_ids is not None:
+            expected = past_len + t
+            if doc_ids.shape != (b, expected):
+                raise ValueError(
+                    f"doc_ids must be (B, past_len + T) = {(b, expected)}, got "
+                    f"{tuple(doc_ids.shape)}"
+                )
+
         x = self.tok_emb(input_ids)
         caches: list[KVCache] | None = [] if use_cache else None
         for i, block in enumerate(self.blocks):
             layer_past = None if past_kvs is None else past_kvs[i]
-            x, present = block(x, self.rope, past_kv=layer_past, use_cache=use_cache)
+            x, present = block(
+                x, self.rope, past_kv=layer_past, use_cache=use_cache, doc_ids=doc_ids
+            )
             if caches is not None and present is not None:
                 caches.append(present)
         x = self.norm_f(x)

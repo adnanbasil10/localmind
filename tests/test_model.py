@@ -529,6 +529,143 @@ def test_efficient_attention_backend_on_cuda() -> None:
 
 
 # =====================================================================================
+# Document-boundary masking for packed sequences (§7 packing, §8 `model(x, doc_mask)`)
+# =====================================================================================
+def _two_docs() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Two documents packed into one row, plus their per-position segment ids."""
+    gen = torch.Generator().manual_seed(7)
+    doc_a = torch.randint(0, TINY.vocab_size, (1, 5), generator=gen)
+    doc_b = torch.randint(0, TINY.vocab_size, (1, 6), generator=gen)
+    packed = torch.cat([doc_a, doc_b], dim=1)
+    doc_ids = torch.tensor([[0] * 5 + [1] * 6])
+    return doc_a, doc_b, packed, doc_ids
+
+
+@pytest.mark.parametrize("backend", ATTN_BACKENDS)
+def test_packed_document_cannot_attend_across_a_boundary(backend: str) -> None:
+    """The real proof: a packed document must behave exactly as if run alone.
+
+    Stronger than inspecting mask contents. It works because RoPE is *relative*: doc B
+    sits at absolute positions 5..10 when packed and 0..5 when alone, but every
+    within-document offset is identical, so a correctly masked model cannot tell the
+    difference. Any leakage from document A changes B's outputs immediately.
+    """
+    model = _tiny_model()
+    model.set_backend(backend)  # type: ignore[arg-type]
+    doc_a, doc_b, packed, doc_ids = _two_docs()
+
+    with torch.no_grad():
+        masked = model(packed, doc_ids=doc_ids).logits
+        alone_a = model(doc_a).logits
+        alone_b = model(doc_b).logits
+        bleeding = model(packed).logits  # naive packing: no doc_ids
+
+    torch.testing.assert_close(masked[:, :5], alone_a, rtol=1e-4, atol=1e-5)
+    torch.testing.assert_close(masked[:, 5:], alone_b, rtol=1e-4, atol=1e-5)
+    # And the test has teeth: without the mask, document B really is contaminated.
+    assert (bleeding[:, 5:] - alone_b).abs().max() > 1e-2
+    # Document A is first in the row, so it is unaffected either way (nothing precedes
+    # it) -- which is exactly why only B can detect the leak.
+    torch.testing.assert_close(bleeding[:, :5], alone_a, rtol=1e-4, atol=1e-5)
+
+
+def test_backends_agree_with_a_doc_mask() -> None:
+    """DoD #2 must still hold on the packed path, not just the plain causal one."""
+    _, _, packed, doc_ids = _two_docs()
+    outputs: dict[str, torch.Tensor] = {}
+    for backend in ATTN_BACKENDS:
+        model = _tiny_model()
+        model.set_backend(backend)
+        with torch.no_grad():
+            outputs[backend] = model(packed, doc_ids=doc_ids).logits
+    for a, b in itertools.combinations(ATTN_BACKENDS, 2):
+        diff = (outputs[a] - outputs[b]).abs().max().item()
+        assert diff < 1e-3, f"{a} vs {b} differ by {diff} with a doc mask"
+
+
+@pytest.mark.parametrize("backend", ATTN_BACKENDS)
+def test_doc_ids_none_and_single_document_are_the_plain_causal_model(backend: str) -> None:
+    """`doc_ids=None` must not change behaviour, and one document spanning the whole
+    row must be identical to passing no mask at all."""
+    model = _tiny_model()
+    model.set_backend(backend)  # type: ignore[arg-type]
+    torch.manual_seed(0)
+    ids = torch.randint(0, TINY.vocab_size, (2, 12))
+    one_doc = torch.zeros(2, 12, dtype=torch.long)
+    with torch.no_grad():
+        plain = model(ids).logits
+        explicit_none = model(ids, doc_ids=None).logits
+        single = model(ids, doc_ids=one_doc).logits
+    assert torch.equal(plain, explicit_none)
+    torch.testing.assert_close(plain, single, rtol=1e-4, atol=1e-5)
+
+
+@pytest.mark.parametrize("backend", ATTN_BACKENDS)
+def test_doc_mask_with_kv_cache_matches_full_forward(backend: str) -> None:
+    """Cached decode with a doc mask must equal one masked full forward.
+
+    The mask is rectangular here -- `(T_q, T_past + T_q)` -- so this is where an
+    offset mistake would show up.
+    """
+    model = _tiny_model()
+    model.set_backend(backend)  # type: ignore[arg-type]
+    _, _, packed, doc_ids = _two_docs()
+    total = packed.shape[1]
+
+    with torch.no_grad():
+        full = model(packed, doc_ids=doc_ids).logits
+        prefill = model(packed[:, :5], doc_ids=doc_ids[:, :5], use_cache=True)
+        caches = prefill.kv_caches
+        pieces = [prefill.logits]
+        for i in range(5, total):
+            # doc_ids must describe the WHOLE context so far, not just the new token.
+            step = model(
+                packed[:, i : i + 1],
+                past_kvs=caches,
+                use_cache=True,
+                doc_ids=doc_ids[:, : i + 1],
+            )
+            caches = step.kv_caches
+            pieces.append(step.logits)
+        incremental = torch.cat(pieces, dim=1)
+    torch.testing.assert_close(full, incremental, rtol=1e-3, atol=1e-3)
+
+
+def test_doc_ids_must_cover_the_whole_cached_context() -> None:
+    """A width mismatch is a hard error, never a silent broadcast."""
+    model = _tiny_model()
+    _, _, packed, doc_ids = _two_docs()
+    with torch.no_grad():
+        prefill = model(packed[:, :5], doc_ids=doc_ids[:, :5], use_cache=True)
+    with pytest.raises(ValueError, match="past_len \+ T"):
+        # Only the new token's id, not the whole context: rejected.
+        model(packed[:, 5:6], past_kvs=prefill.kv_caches, doc_ids=doc_ids[:, 5:6])
+    with pytest.raises(ValueError, match="doc_ids must be"):
+        model(packed, doc_ids=doc_ids[0])  # 1-D
+
+
+def test_doc_mask_consumes_the_data_layers_boundaries() -> None:
+    """Closes the seam end to end: `packing.doc_ids_from_boundaries` feeds `forward`."""
+    packing = pytest.importorskip("localmind.data.packing")
+    length = 11
+    seg = packing.doc_ids_from_boundaries([0, 5], length)
+    doc_ids = torch.from_numpy(seg).long().unsqueeze(0)
+    assert doc_ids.tolist() == [[0] * 5 + [1] * 6]
+
+    # The data layer's own (length, length) mask must equal the one attention builds.
+    reference = torch.from_numpy(packing.build_doc_mask([0, 5], length))
+    model = _tiny_model()
+    built = model.blocks[0].attn._doc_causal_mask(doc_ids, length, length, torch.device("cpu"))
+    assert torch.equal(built[0, 0], reference)
+
+    _, doc_b, packed, _ = _two_docs()
+    with torch.no_grad():
+        masked = model(packed, doc_ids=doc_ids).logits
+        alone_b = model(doc_b).logits
+    torch.testing.assert_close(masked[:, 5:], alone_b, rtol=1e-4, atol=1e-5)
+
+
+# =====================================================================================
 # SwiGLU
 # =====================================================================================
 def test_swiglu_matches_definition_and_has_three_matrices() -> None:
