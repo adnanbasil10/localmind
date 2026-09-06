@@ -683,6 +683,8 @@ class TrainResult:
     wall_clock_s: float = 0.0
     metrics: list[dict[str, Any]] = field(default_factory=list)
     checkpoint: Path | None = None
+    #: One line on whether Hub pushes actually landed. See CheckpointManager.hub_summary.
+    hub_summary: str = ""
 
 
 class Trainer:
@@ -749,14 +751,31 @@ class Trainer:
 
         run_dir = Path(out_dir) if out_dir is not None else self._default_run_dir()
         self.run_dir = run_dir
+        # §3.2 item 3 makes Hub pushes the insurance against a 12-hour session kill, so a
+        # push path that is silently OFF is the worst outcome available: a 4-hour run once
+        # finished with its only copy on a session disk that was about to be wiped, because
+        # LOCALMIND_HUB_REPO was set in the notebook and read by nothing. Fall back to the
+        # environment, then say out loud which way it resolved.
+        hub_repo = cfg.hub_repo_id or os.environ.get("LOCALMIND_HUB_REPO") or None
         self.ckpt = CheckpointManager(
             run_dir,
             every_min=cfg.ckpt_every_min,
             hub_every_min=cfg.hub_push_every_min,
-            hub_repo_id=cfg.hub_repo_id,
+            hub_repo_id=hub_repo,
             keep_last=cfg.keep_last_checkpoints,
             rank=rank,
         )
+        if rank == 0:
+            if hub_repo:
+                print(f"[train] hub pushes ON -> {hub_repo}", flush=True)
+            else:
+                print(
+                    "[train] WARNING: hub pushes are OFF. Checkpoints live only in "
+                    f"{run_dir} and are LOST when this session ends. Set "
+                    "LOCALMIND_HUB_REPO=<user>/<repo> (or hub_repo_id in the config) "
+                    "to enable them.",
+                    flush=True,
+                )
         self.sink = (
             sink
             if sink is not None
@@ -1001,6 +1020,7 @@ class Trainer:
             wall_clock_s=time.perf_counter() - t_start,
             metrics=collected,
             checkpoint=ckpt_path,
+            hub_summary=self.ckpt.hub_summary(),
         )
 
     def _bytes_per_token(self, loader: BatchLoader) -> float:
@@ -1322,6 +1342,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{result.state.tokens_seen:,} tokens, {result.wall_clock_s:.1f}s, "
         f"checkpoint={result.checkpoint}"
     )
+    # The insurance report. A run that finished beautifully with nothing on the Hub is one
+    # session-kill away from being worthless, and that must be the last thing printed.
+    summary = getattr(result, "hub_summary", None)
+    if summary:
+        print(f"[train] {summary}", flush=True)
     return 0
 
 

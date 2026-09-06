@@ -1,8 +1,11 @@
 # Model card — LocalMind-31M
 
-> **Status: not yet trained.** This card is scaffolded with everything determined by the
-> architecture and the data plan. Every field marked _pending_ requires a GPU run that has not
-> happened. No number appears here until it has been measured.
+> **Status: pretrained base trained; post-training not started.** The §8 pretraining run is
+> complete and its numbers are below. The §9 router / grader / rewriter heads — the thing that makes
+> this model useful to the RAG system — have **not** been trained. Fields still marked _pending_
+> require that work.
+>
+> Weights: <https://huggingface.co/Adnanbasil/localmind-31m>
 
 ## Model details
 
@@ -41,15 +44,21 @@ rather than a defect.
 | Domain corpus (framework docs, RFCs, permissive papers) | 10% | per-document, recorded at ingest | domain alignment |
 | TinyStories | 5% | CDLA | early curriculum |
 
-Target 1.5B tokens (~48 tokens/param); 3B is the stretch.
+Target 1.5B tokens (~48 tokens/param); 3B is the stretch. **The table above is the PLAN. What
+was actually used differs — see the notes directly below.**
 
 **Nothing was scraped.** Every corpus is permissively licensed and its license is recorded.
 
 Processing: license filter, language ID, quality heuristics, MinHash-LSH near-dedup (5-grams,
 threshold 0.8), PII scrub, 13-gram decontamination against the golden eval set.
 
-- Dedup ratio: _pending_
-- Tokens removed by decontamination: _pending_
+- Corpus actually used: **49,566,720 tokens** from 49,976 documents (50,000 drawn, 18 removed by
+  filters, 6 by MinHash near-dedup).
+- **The Stack v2 was NOT included.** It is gated on the Hub, then streamed pathologically slowly,
+  then returned HTTP 503. Weights were renormalised to FineWeb-Edu 71.4% / Cosmopedia-v2 21.4% /
+  TinyStories 7.1%. **This model is weak at code**, and that is a data decision, not a model one.
+- The run trained 1.5B tokens over a 49.6M-token corpus, i.e. **~30 epochs**. §8 assumes 1.5B
+  *unique* tokens. Memorisation effects should be assumed until a held-out evaluation says otherwise.
 
 ## Training
 
@@ -62,7 +71,10 @@ threshold 0.8), PII scrub, 13-gram decontamination against the golden eval set.
 | Global batch | ~262,144 tokens/step |
 | Grad clip | 1.0 |
 | z-loss | 1e-4 |
-| Total compute | _pending_ (budgeted ~35 GPU-h incl. ablations) |
+| Total compute | **3 h 55 m** on 2x T4 (14,133 s), 5,722 steps, 1,499,987,968 tokens |
+| Final train loss | **2.4509** (from 9.7821) |
+| Sustained MFU | **19.4%** |
+| GradScaler halvings | **0** across the run (no fp16 overflow) |
 
 ## Evaluation
 
@@ -82,10 +94,17 @@ than removed.
 ## Limitations and risks
 
 - **Not a generator.** See "Out of scope" above.
+- **Trained ~30 epochs over 49.6M tokens**, not 1.5B unique ones. Memorisation is likely and
+  unmeasured: no held-out split was built, so training loss cannot distinguish learning from
+  recall. Treat 2.4509 as a training-loss figure only.
+- **Weak at code.** The Stack v2 portion of the mixture was unavailable; there is no code in
+  this model's training data.
 - **English-centric.** The mixture is overwhelmingly English; other languages will be poor.
 - **Small-model brittleness.** Expect sensitivity to prompt format. The chat template is rendered
   by the tokenizer specifically so format drift cannot silently creep in.
-- **Inherited teacher bias.** Distilled from Qwen2.5-3B-Instruct; its biases propagate.
+- **Not distilled yet.** The §9 SFT/KD/DPO/GRPO stages have not run, so this checkpoint has no
+  task heads and no teacher-inherited bias — it is a raw pretrained base. Once distillation
+  happens, Qwen2.5-3B-Instruct's biases will propagate and this note must be updated.
 - **Web-derived corpus.** FineWeb-Edu is filtered but not curated by hand; toxic and factually
   wrong text is present at some rate.
 - **Adversarial input.** The injection classifier is a mitigation, not a guarantee. Measured block

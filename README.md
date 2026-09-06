@@ -5,15 +5,20 @@ agentic RAG system — designed to train and deploy entirely on free-tier comput
 Docker.**
 
 Hard constraint: **total cash cost = $0.** Every model is open-weights, every service is
-self-hosted, every GPU-hour comes from a free allowance. Spend to date: **$0.00, 0 GPU-hours.**
+self-hosted, every GPU-hour comes from a free allowance. Spend to date: **$0.00 and ~8.4 GPU-hours**
+of a free 30 h/week Kaggle quota (~4 h of which was wasted — see `docs/compute_log.md`).
 
 ---
 
 ## ⚠️ Read this before the tables
 
-**The model is not trained yet.** Every number below is a measurement of the *systems* — the
-tokenizer, the attention backends, the inference engine, the retrieval fusion, the caches — running
-on **CPU with untrained weights**, or on **synthetic corpora with deterministic stand-in models**.
+**The pretrained base is now trained** (§8 complete — see the Pretraining table below). The §9
+post-training that gives it the router / grader / rewriter heads has **not** run, so the model is
+not yet useful to the RAG system and no quality claim is made for it.
+
+Every *other* number below is a measurement of the **systems** — the tokenizer, attention backends,
+inference engine, retrieval fusion, caches — running on **CPU**, or on **synthetic corpora with
+deterministic stand-in models**.
 
 That distinction is load-bearing, and it is labelled on every table:
 
@@ -23,12 +28,34 @@ That distinction is load-bearing, and it is labelled on every table:
 | **synthetic** | Real code, real measurement, but a synthetic corpus and/or fake embedder — the *harness* is validated, not retrieval quality on a real corpus. |
 | **not run** | Requires a GPU, network, or a trained checkpoint. **No value is invented.** |
 
-Nothing here reports model *quality*, because no model has been trained. The pretraining,
-distillation and quality tables are scaffolded with every cell marked `not run`.
+No table here reports model *quality*. The pretraining run produced a **training loss** on a
+corpus it saw ~30 times, with no held-out split — that measures optimisation, not capability. Every
+capability table (the §9 5e matrix, router accuracy, grader F1) remains `not run`.
 
 ---
 
 ## Results
+
+### Pretraining — 2× T4 (Kaggle free tier), 1 seed · *measured*
+
+| | |
+|---|---|
+| Final train loss | **2.4509** (from 9.7821) — §8 target band was 3.0–3.5 |
+| Tokens | 1,499,987,968 in **3 h 55 m** |
+| Sustained MFU | **19.4%** — §8 predicted 10–15% for a first T4 run |
+| Throughput | 107,100 tok/s |
+| GradScaler halvings | **0** in 5,722 steps (no fp16 overflow, on hardware with no bf16) |
+| Cost | **$0.00** |
+
+Weights: <https://huggingface.co/Adnanbasil/localmind-31m>
+
+The WSD decay is where the last gain came from — loss moved 2.956 → 2.976 across 500 late stable-phase
+steps, then **2.956 → 2.454 over the 18% decay**. That is ADR 0002's argument, measured.
+
+**Caveats, not footnotes:** 1.5B tokens over a **49.6M-token** corpus is ~30 epochs, not 1.5B unique
+tokens. **No held-out split was built**, so memorisation is unmeasured and 2.4509 is a *training*
+loss only. **No code data** — Stack v2 was gated, then pathologically slow, then 503ing. One seed,
+no CI, unlike every other table here.
 
 ### Inference engine — CPU, 12M proxy, 3 seeds, bootstrap 95% CI · *measured*
 
@@ -116,7 +143,7 @@ auto-suppresses judged metrics.
 
 ### Not run — needs a GPU, and says so
 
-**Blocked on a GPU:** pretraining (1.5B tokens), the WSD scaling-law study, the Muon-vs-AdamW
+**Blocked on a GPU:** the WSD scaling-law study, the Muon-vs-AdamW
 comparison, all four post-training stages, the §9 5e comparison matrix (**0 of 24 cells measured**),
 ColQwen2 indexing, and the vLLM baseline. The harnesses exist and are tested; they run the moment a
 checkpoint does. The 5e matrix evaluates to `not-evaluable`, never `failed`, so an unrun experiment
@@ -175,6 +202,13 @@ Kept deliberately, per §20 rule 2:
 - The GGUF export is verified against our own reader, **never llama.cpp**, and is lossy — the
   `llama` architecture has no QK-norm tensors, so export refuses without `allow_lossy=True`.
 - BPE exhausted mergeable pairs at 8,062 of a requested 16,384 vocab on the small corpus.
+- The pretraining run reached **19.4% MFU**, above §8's predicted 10–15% but below its 25% stretch
+  target; the optimisation sub-project was not attempted.
+- **Hourly Hub checkpoint pushes silently never ran** during that 4-hour job. `LOCALMIND_HUB_REPO`
+  was set in the notebook and read by nothing, and `hub_due()` returned False without complaint, so
+  the only copy of the model sat on a session disk about to be wiped. Fixed: the env var is now
+  wired, the run warns at startup when pushes are off, and the final line reports whether any
+  landed.
 - The GGUF files themselves are **not committed** (~90 MB); regenerate with
   `uv run python -m localmind.inference.quantize --export-gguf`. Only the ~200 KB of benchmark JSON
   is versioned. An earlier draft of this README quoted "31.68 MB" where the true figure is 31.68

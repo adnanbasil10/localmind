@@ -412,6 +412,7 @@ class CheckpointManager:
         self._last_push = now
         self.saved_paths: list[Path] = []
         self.pushed: list[str] = []
+        self.push_failures = 0
 
     # -- triggers --------------------------------------------------------------------
     def due(self, now: float | None = None) -> bool:
@@ -463,11 +464,33 @@ class CheckpointManager:
         try:
             url = push_to_hub(path, self.hub_repo_id)
         except Exception as exc:
-            print(f"[checkpoint] hub push failed ({type(exc).__name__}: {exc}); continuing")
+            self.push_failures += 1
+            # Escalate: one failure is noise, a run where NOTHING has ever landed is a
+            # silent data-loss risk and must not read like routine chatter.
+            prefix = (
+                "[checkpoint] WARNING: hub push failed and NOTHING has been pushed this run"
+                if not self.pushed
+                else "[checkpoint] hub push failed"
+            )
+            print(f"{prefix} ({type(exc).__name__}: {exc}); continuing", flush=True)
             return None
         self._last_push = self._clock()
         self.pushed.append(url)
         return url
+
+    def hub_summary(self) -> str:
+        """One line for the end of a run. Loud when the insurance never actually engaged."""
+        if not self.hub_repo_id:
+            return (
+                "hub pushes DISABLED - checkpoints exist only on this machine and are lost "
+                "when the session ends"
+            )
+        if not self.pushed:
+            return (
+                f"WARNING: 0 checkpoints reached {self.hub_repo_id} "
+                f"({self.push_failures} failed attempts). The only copy is local."
+            )
+        return f"{len(self.pushed)} checkpoint(s) pushed to {self.hub_repo_id}"
 
     def _save_rank_loader(self, step: int, loader_state: dict[str, Any] | None) -> None:
         if loader_state is None:
