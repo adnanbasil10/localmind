@@ -796,6 +796,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--alpha", type=float, default=None)
     parser.add_argument("--data", default=None, help="JSONL from localmind.post.sft")
     parser.add_argument("--tokenizer", default=None, help="path to a trained tokenizer json")
+    parser.add_argument("--checkpoint", default=None, help="pretrained base to distil FROM")
     parser.add_argument("--dry-run", action="store_true", help="validate config and exit")
     args = parser.parse_args(argv)
 
@@ -819,10 +820,61 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if not args.data or not args.tokenizer:
         parser.error("--data and --tokenizer are required unless --dry-run is passed")
-    raise SystemExit(
-        "training entrypoint requires a trained tokenizer and a checkpoint; run this "
-        "from notebooks/kaggle/02_distill.ipynb on a T4"
+
+    # Everything below used to be a SystemExit telling the reader to run the notebook --
+    # which called this same CLI. The training functions existed all along; nothing invoked
+    # them. Wire them up.
+    import json as _json
+
+    import torch
+
+    from localmind.model import LocalMindTransformer, ModelConfig
+    from localmind.post.sft import SFTExample
+    from localmind.tokenizer.tokenizer import Tokenizer
+
+    tokenizer = Tokenizer.load(args.tokenizer)
+    # NB: cfg.model_config is pydantic v2's reserved ConfigDict, not this field.
+    model_cfg = ModelConfig.from_yaml(cfg.model_config_path)
+    model = LocalMindTransformer(model_cfg)
+
+    if args.checkpoint:
+        blob = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+        state = blob.get("model", blob) if isinstance(blob, dict) else blob
+        state = {k.removeprefix("module."): v for k, v in state.items()}
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        print(
+            f"[kd] loaded {args.checkpoint} (missing={len(missing)} unexpected={len(unexpected)})"
+        )
+    else:
+        print("[kd] WARNING: no --checkpoint given; distilling from RANDOM init")
+
+    with open(args.data, encoding="utf-8") as fh:
+        rows = [_json.loads(line) for line in fh if line.strip()]
+    examples = [SFTExample(**r) if not isinstance(r, SFTExample) else r for r in rows]
+    print(f"[kd] arm={args.arm} examples={len(examples)} seq_len={cfg.seq_len}")
+
+    result = run_kd(
+        args.arm,
+        model=model,
+        tokenizer=tokenizer,
+        examples=examples,
+        cfg=cfg,
+        seq_len=cfg.seq_len,
+        batch_size=cfg.micro_batch_size,
+        peak_lr=cfg.peak_lr,
+        epochs=cfg.epochs,
+        seed=cfg.seed,
     )
+
+    out_dir = Path(cfg.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ckpt = out_dir / f"kd_{args.arm}.pt"
+    torch.save({"model": model.state_dict(), "arm": args.arm}, ckpt)
+    print(
+        f"[kd] done: arm={args.arm} steps={result.steps} "
+        f"loss {result.initial_loss:.4f} -> {result.final_loss:.4f} -> {ckpt}"
+    )
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
