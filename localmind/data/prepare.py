@@ -396,6 +396,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     ap.add_argument("--no-dedup", action="store_true", help="skip MinHash (needs datasketch)")
     ap.add_argument(
+        "--val-docs",
+        type=int,
+        default=0,
+        help="hold out this many documents as a validation split under <out>/val. "
+        "The training set is then 13-gram decontaminated AGAINST it, so val is genuinely "
+        "unseen -- which is the only way a val loss can distinguish learning from "
+        "memorisation. build_loaders picks <out>/val up automatically.",
+    )
+    ap.add_argument(
         "--exclude",
         default="",
         help="comma-separated source names to drop from the mixture, e.g. 'the_stack_v2'. "
@@ -468,6 +477,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         tokenizer.save(tok_path)
         print(f"[prepare] saved tokenizer -> {tok_path} (vocab {tokenizer.vocab_size})")
 
+    # Validation split first, so the training set can be decontaminated against it.
+    eval_texts: list[str] = []
+    if args.val_docs > 0:
+        val_dir = out_dir / "val"
+        print(f"[prepare] building VALIDATION split: {args.val_docs} docs -> {val_dir}")
+        val_manifest = prepare_shards(
+            sources,
+            tokenizer,
+            val_dir,
+            seq_len=seq_len,
+            # A different seed draws different documents from the same mixture; the
+            # 13-gram decontamination below is what actually guarantees disjointness.
+            seed=seed + 99991,
+            n_docs=args.val_docs,
+            enable_near_dedup=not args.no_dedup,
+        )
+        eval_texts = list(getattr(val_manifest, "texts", []) or [])
+        print(
+            f"[prepare] val: {len(val_manifest.shards)} shard(s), "
+            f"{val_manifest.total_rows:,} rows, {val_manifest.total_tokens:,} tokens"
+        )
+
     print(f"[prepare] building shards: n_docs={n_docs} seq_len={seq_len} seed={seed}")
     manifest = prepare_shards(
         sources,
@@ -476,6 +507,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         seq_len=seq_len,
         seed=seed,
         n_docs=n_docs,
+        eval_texts=eval_texts,
         enable_near_dedup=not args.no_dedup,
     )
     print(
