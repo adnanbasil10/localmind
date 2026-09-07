@@ -64,6 +64,28 @@ prediction and cost ~4 GPU-hours to establish. See `docs/benchmarks.md` §"Phase
 **Remaining caveats:** **no code data** — Stack v2 was gated, then pathologically slow, then 503ing.
 One seed per arm, no CI, unlike every other table here.
 
+### The distilled control plane — 60 held-out prompts/job, 2× T4 · *measured*
+
+Distilled from **Qwen2.5-3B-Instruct** onto the 31M base.
+
+| Job | Format-valid | Correct vs teacher | p50 |
+|---|---|---|---|
+| **router** | **100.0%** | **96.7%** | 126.9 ms |
+| **grader** | **100.0%** | **100.0%** | 203.6 ms |
+| **rewriter** | **100.0%** | **100.0%** | 197.9 ms |
+
+```
+grader  pred {"label": "relevant", "score": 0.85}   gold {"label": "relevant", "score": 0.9}
+```
+
+It produced its own calibrated score rather than replaying the teacher's token — correctness is
+graded on the label for that reason. KD holdout gap **+0.029**, so this generalises rather than
+memorises.
+
+**Not established:** DPO ran on *synthetic* preference pairs with KL 1,086,489 — its checkpoint is
+unusable and no DPO claim is made. Correctness is agreement with the teacher, not ground truth.
+Latency is GPU; §9's CPU p50 < 20 ms target is unmeasured. One seed, no CI.
+
 ### Inference engine — CPU, 12M proxy, 3 seeds, bootstrap 95% CI · *measured*
 
 | Stage | Result |
@@ -149,12 +171,6 @@ fallback judge scores **κ = 0.591**, below the 0.6 trust bar, so the harness **
 auto-suppresses judged metrics.
 
 ### Not run — needs a GPU, and says so
-
-**§9 post-training ran end to end** — SFT → KD → DPO → GRPO all train and chain correctly. The
-result is **degenerate**, and three independent guardrails said so: KD memorised its (synthetic)
-teacher, DPO's KL hit 4,005,490 against a 0.5 bar, and GRPO saw 100% degenerate groups with 0%
-format-valid output. No quality claim is made; see `docs/benchmarks.md` §"Phase 9". Real numbers
-need a real teacher (Qwen2.5-3B via vLLM) and KD stopped short of convergence.
 
 **Blocked on a GPU:** the WSD scaling-law study, the Muon-vs-AdamW comparison, the §9 5e comparison matrix (**0 of 24 cells measured**),
 ColQwen2 indexing, and the vLLM baseline. The harnesses exist and are tested; they run the moment a
