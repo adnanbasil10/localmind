@@ -150,8 +150,13 @@ auto-suppresses judged metrics.
 
 ### Not run — needs a GPU, and says so
 
-**Blocked on a GPU:** the WSD scaling-law study, the Muon-vs-AdamW
-comparison, all four post-training stages, the §9 5e comparison matrix (**0 of 24 cells measured**),
+**§9 post-training ran end to end** — SFT → KD → DPO → GRPO all train and chain correctly. The
+result is **degenerate**, and three independent guardrails said so: KD memorised its (synthetic)
+teacher, DPO's KL hit 4,005,490 against a 0.5 bar, and GRPO saw 100% degenerate groups with 0%
+format-valid output. No quality claim is made; see `docs/benchmarks.md` §"Phase 9". Real numbers
+need a real teacher (Qwen2.5-3B via vLLM) and KD stopped short of convergence.
+
+**Blocked on a GPU:** the WSD scaling-law study, the Muon-vs-AdamW comparison, the §9 5e comparison matrix (**0 of 24 cells measured**),
 ColQwen2 indexing, and the vLLM baseline. The harnesses exist and are tested; they run the moment a
 checkpoint does. The 5e matrix evaluates to `not-evaluable`, never `failed`, so an unrun experiment
 can never be mistaken for a negative result.
@@ -213,6 +218,12 @@ Kept deliberately, per §20 rule 2:
   target; the optimisation sub-project was not attempted.
 - **Training on 4× more data produced a worse model.** Predicted the opposite, spent ~4 GPU-hours
   on it, and the held-out split said 3.0437 vs 2.6891. Kept as a result, not deleted.
+- **§9's first end-to-end run was degenerate at every stage**, and each stage detected it: teacher
+  memorisation, KL 4,005,490, then 100% degenerate GRPO groups. The pipeline is correct; the
+  synthetic teacher is not a substitute for a real one.
+- **Phase 9 does not use Phase 6.** GRPO's sampler generates with no KV cache — ~512,000 full
+  forward passes at the configured size, which failed to finish in 40 minutes — while
+  `localmind/inference/kv_cache.py` sits in the same repo measured at 7.9× on that exact workload.
 - **Hourly Hub checkpoint pushes silently never ran** during that 4-hour job. `LOCALMIND_HUB_REPO`
   was set in the notebook and read by nothing, and `hub_due()` returned False without complaint, so
   the only copy of the model sat on a session disk about to be wiped. Fixed: the env var is now
