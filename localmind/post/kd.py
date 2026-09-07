@@ -391,7 +391,9 @@ class GreedyStudentSampler:
                 nxt = pick(res.logits[0, -1])
         return out
 
-    def _generate_uncached(self, prompt_ids: list[int], max_new_tokens: int, **kw: Any) -> list[int]:
+    def _generate_uncached(
+        self, prompt_ids: list[int], max_new_tokens: int, **kw: Any
+    ) -> list[int]:
         """The original one-forward-per-token implementation, kept as a reference.
 
         The tests assert the cached path reproduces this exactly at temperature 0.

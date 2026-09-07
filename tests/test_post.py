@@ -1799,7 +1799,6 @@ def test_cached_sampler_matches_the_naive_reference_exactly() -> None:
     so the two paths are asserted equal rather than assumed equal.
     """
     import torch
-
     from localmind.model import LocalMindTransformer, ModelConfig
     from localmind.post.kd import GreedyStudentSampler
 
