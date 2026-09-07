@@ -1086,6 +1086,37 @@ inference engine was built as a serving artifact and never wired back into train
 which is where RL post-training spends most of its wall-clock. Wiring it is the single highest-value
 optimisation available in Phase 9.
 
+### Second run, with a REAL teacher — and a corrected diagnosis
+
+Qwen2.5-3B-Instruct via `transformers` (vLLM will not install on Kaggle: it resolves to a CUDA-13
+build against a CUDA-12.8 image and dies on `libcudart.so.13`). 3,000 examples, 0% blank, well-formed
+JSON for the structured jobs.
+
+| | Fake teacher | **Real teacher** |
+|---|---|---|
+| KD train loss | 0.0012 | 0.0014 |
+| KD holdout ce | *not measured* | **0.0306** |
+| KD holdout gap | — | **+0.029** (no warning) |
+| DPO KL | 4,005,490 | **1,086,489** |
+
+**The earlier diagnosis was wrong.** This document previously claimed teacher memorisation caused
+DPO's runaway KL. The real-teacher KD checkpoint **generalises cleanly** — a holdout gap of +0.029
+against a 1.0 bar — and the KL still explodes, 4x smaller but still six orders of magnitude above
+the 0.5 threshold. Memorisation was not the cause.
+
+**Generalisation and entropy are different properties, and DPO cares about the second.** A training
+loss of 0.0014 means the reference policy is near-*deterministic*: almost all probability mass on a
+single token at each position. DPO forms log-probability **ratios** against that frozen reference,
+and ratios against a near-certain distribution explode whether or not the model generalises. The
+holdout detector added earlier measures the wrong quantity for this purpose — it is still worth
+having, because it distinguishes two runs with near-identical training loss and opposite meaning,
+but it does not predict DPO stability.
+
+**What would actually fix it:** stop KD at a loss where the policy still has entropy (early-stopping
+on the *distribution*, not the loss), or raise β so the KL penalty binds, or add explicit entropy
+regularisation to the distillation objective. None of these has been tested here, so none is claimed
+to work.
+
 ### What is needed for numbers worth quoting
 
 1. **A real teacher.** Qwen2.5-3B-Instruct via vLLM, ~1–2 GPU-h for 50k short outputs.
