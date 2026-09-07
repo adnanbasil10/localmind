@@ -1814,3 +1814,51 @@ def test_cached_sampler_matches_the_naive_reference_exactly() -> None:
 
     assert cached == naive, f"KV-cached decode diverged: {cached} != {naive}"
     assert cached, "sampler produced nothing, so the comparison proved nothing"
+
+
+@pytest.mark.parametrize(
+    "module,argv",
+    [
+        (
+            "localmind.post.sft",
+            [
+                "--generate-teacher-data",
+                "--fake-teacher",
+                "--backend",
+                "transformers",
+                "--batch-size",
+                "8",
+                "--n",
+                "4",
+            ],
+        ),
+        (
+            "localmind.post.sft",
+            ["--generate-teacher-data", "--fake-teacher", "--backend", "vllm", "--n", "4"],
+        ),
+    ],
+)
+def test_cli_flags_referenced_in_code_are_actually_declared(module, argv, tmp_path) -> None:
+    """Every flag the code reads must exist on the parser.
+
+    `--backend` was used by main() while its add_argument call was silently dropped by a
+    bad edit. argparse then exited 2 the instant anyone passed it, and the failure only
+    surfaced on Kaggle after a GPU session had already been spent getting there. Parsing
+    the real argv the notebook uses catches it in CI instead.
+    """
+    import importlib
+    import sys
+
+    mod = importlib.import_module(module)
+    out = tmp_path / "out.jsonl"
+    full = [*argv, "--out", str(out)]
+    old = sys.argv
+    try:
+        sys.argv = [module, *full]
+        rc = mod.main(full)
+    except SystemExit as exc:  # argparse error == 2; a clean exit is fine
+        assert exc.code != 2, f"argparse rejected {full}: a flag the code uses is undeclared"
+        rc = exc.code
+    finally:
+        sys.argv = old
+    assert rc in (0, None)

@@ -1423,6 +1423,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", default=None)
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument(
+        "--backend",
+        choices=("vllm", "transformers"),
+        default="vllm",
+        help="vllm is faster; transformers is the fallback when vllm will not import "
+        "(on Kaggle it resolves to a CUDA-13 build against a CUDA-12.8 image)",
+    )
+    parser.add_argument("--batch-size", type=int, default=16, help="transformers backend only")
+    parser.add_argument(
         "--fake-teacher",
         action="store_true",
         help="use DeterministicFakeTeacher (offline smoke test, no GPU)",
