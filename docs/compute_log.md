@@ -11,11 +11,11 @@ the runs that were wasted.
 | Bucket | Estimate (§8) | Spent | Remaining |
 |---|---|---|---|
 | Pretrain + ablations | 35 h | **8.4 h** | 26.6 h |
-| Post-training | 10 h | 0 h | 10 h |
+| Post-training | 10 h | **0.8 h** | 9.2 h |
 | Teacher generation | 4 h | 0 h | 4 h |
 | ColQwen2 indexing | 2 h | 0 h | 2 h |
 | Eval sweeps | 8 h | 0 h | 8 h |
-| **Total** | **~60 h** | **~12.6 h** | **~47.4 h** |
+| **Total** | **~60 h** | **~13.4 h** | **~46.6 h** |
 
 Kaggle allowance is 30 GPU-h/week, so ~60 h is two weeks of quota spread across 16 calendar weeks.
 Comfortable — provided nothing is wasted on runs that were not checkpointed.
@@ -34,6 +34,7 @@ the most useful entry in the file.
 | 2026-09-06 | Kaggle | 2x T4 | **3.93** | **main pretrain (v1)** | **ok** | 5,722 steps, 1.5B tokens, ce 9.7821 -> 2.4509, 19.4% MFU. **Held-out val ce 2.6891.** Best model. |
 | 2026-09-07 | Kaggle | 2x T4 | ~0.2 | data rebuild 200k + val split | ok | 196,147,200 tokens, 2k held-out docs |
 | 2026-09-07 | Kaggle | 2x T4 | **3.93** | **retrain on 4x corpus (v2)** | **negative result** | Same budget, 7.6 epochs. Held-out val ce **3.0437** — 0.35 nats WORSE than v1. Prediction was wrong; kept as a finding. |
+| 2026-09-07 | Kaggle | 2x T4 | ~0.8 | **SS9 chain, synthetic teacher** | **mechanics ok, results degenerate** | SFT/KD/DPO/GRPO all train and chain. KD loss -> 0.0012 (memorised templates) left a zero-entropy policy, so DPO's KL hit 4,005,490 and the guardrail fired. No quality claim. |
 
 ## Non-GPU compute
 
