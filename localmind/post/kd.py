@@ -325,9 +325,18 @@ class StudentSampler(Protocol):
 class GreedyStudentSampler:
     """Greedy (or temperature-sampled) decoding straight off the model.
 
-    Exists so arm 2 is runnable offline without the inference engine. It is deliberately
-    the slow, obviously-correct implementation: no KV cache, one forward per token.
-    Production sampling belongs to Phase 6.
+    Uses the model's incremental-decoding path (``past_kvs`` / ``use_cache``), so each new
+    token costs one forward over ONE position rather than over the whole window.
+
+    This used to be one full forward per token, which made GRPO quadratic in context
+    length: at its configured 2,000 prompts x group 8 that is ~512,000 full forwards, and
+    a real run failed to finish in 40 minutes. The irony was that Phase 6 built a KV cache
+    measured at 7.9x on exactly this workload and Phase 9 never used it. `use_cache=True`
+    is the same mechanism, reached without importing the serving engine.
+
+    ``_generate_uncached`` is kept as the obviously-correct reference and is asserted to
+    agree with the cached path in the tests -- a cache that silently diverges from the
+    naive implementation would corrupt every rollout while looking fast.
     """
 
     model: nn.Module
@@ -341,6 +350,51 @@ class GreedyStudentSampler:
         GRPO asks for ``G`` completions from one prompt and needs them to *differ*; a
         sampler that reseeds identically every call returns eight copies of the same
         string, every group is degenerate, and the run silently learns nothing.
+        """
+        import torch
+
+        sample_index = int(kw.pop("sample_index", 0))
+        gen = torch.Generator().manual_seed(self.seed + 7919 * sample_index)
+        max_len = int(getattr(getattr(self.model, "cfg", None), "max_seq_len", 10**9))
+        window = list(prompt_ids)[-max_len:]
+        out: list[int] = []
+        self.model.eval()
+
+        def pick(logits: Any) -> int:
+            if self.temperature <= 0:
+                return int(torch.argmax(logits))
+            probs = torch.softmax(logits.float() / self.temperature, dim=-1)
+            return int(torch.multinomial(probs, 1, generator=gen))
+
+        with torch.no_grad():
+            # Prefill the whole prompt once, then decode one position at a time.
+            res = self.model(torch.tensor([window], dtype=torch.long), use_cache=True)
+            past = res.kv_caches
+            nxt = pick(res.logits[0, -1])
+            for _ in range(max_new_tokens):
+                if nxt == self.eos_id:
+                    break
+                out.append(nxt)
+                if len(window) + len(out) >= max_len:
+                    # The cache cannot grow past the model's context; fall back to a
+                    # re-prefill of the trailing window rather than silently truncating.
+                    window = (window + out)[-max_len:]
+                    out_tail: list[int] = []
+                    res = self.model(torch.tensor([window], dtype=torch.long), use_cache=True)
+                    past, out = res.kv_caches, out + out_tail
+                    nxt = pick(res.logits[0, -1])
+                    continue
+                res = self.model(
+                    torch.tensor([[nxt]], dtype=torch.long), past_kvs=past, use_cache=True
+                )
+                past = res.kv_caches
+                nxt = pick(res.logits[0, -1])
+        return out
+
+    def _generate_uncached(self, prompt_ids: list[int], max_new_tokens: int, **kw: Any) -> list[int]:
+        """The original one-forward-per-token implementation, kept as a reference.
+
+        The tests assert the cached path reproduces this exactly at temperature 0.
         """
         import torch
 

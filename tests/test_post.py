@@ -1787,3 +1787,31 @@ def test_pad_rollouts_keeps_the_completion_when_the_prompt_overflows() -> None:
     # The whole completion is supervised: the label at the prompt/completion boundary is
     # the first completion token, so the shift does not cost the leading one.
     assert kept == completion, f"expected the completion to survive, got {kept}"
+
+
+def test_cached_sampler_matches_the_naive_reference_exactly() -> None:
+    """The KV-cached decode must reproduce one-forward-per-token, token for token.
+
+    GRPO's sampler was rewritten to use the model's incremental-decoding path because the
+    naive version made every rollout a full forward over the whole window -- ~512,000 of
+    them at the configured size, which failed to finish in 40 minutes. A cache that
+    diverges from the reference would silently corrupt every rollout while looking fast,
+    so the two paths are asserted equal rather than assumed equal.
+    """
+    import torch
+
+    from localmind.model import LocalMindTransformer, ModelConfig
+    from localmind.post.kd import GreedyStudentSampler
+
+    cfg = ModelConfig.from_yaml("configs/model/12m_proxy.yaml")
+    torch.manual_seed(0)
+    model = LocalMindTransformer(cfg).eval()
+
+    sampler = GreedyStudentSampler(model=model, eos_id=2, temperature=0.0, seed=1337)
+    prompt = [5, 9, 14, 22, 31, 40]
+
+    cached = sampler.generate(prompt, max_new_tokens=12)
+    naive = sampler._generate_uncached(prompt, max_new_tokens=12)
+
+    assert cached == naive, f"KV-cached decode diverged: {cached} != {naive}"
+    assert cached, "sampler produced nothing, so the comparison proved nothing"
