@@ -356,6 +356,10 @@ class GreedyStudentSampler:
         sample_index = int(kw.pop("sample_index", 0))
         gen = torch.Generator().manual_seed(self.seed + 7919 * sample_index)
         max_len = int(getattr(getattr(self.model, "cfg", None), "max_seq_len", 10**9))
+        # Follow the model's device. Building input ids on CPU against a CUDA model raises
+        # 'Expected all tensors to be on the same device' from the embedding lookup -- a
+        # failure that never appears in CPU-only tests.
+        dev = next(self.model.parameters()).device
         window = list(prompt_ids)[-max_len:]
         out: list[int] = []
         self.model.eval()
@@ -368,7 +372,7 @@ class GreedyStudentSampler:
 
         with torch.no_grad():
             # Prefill the whole prompt once, then decode one position at a time.
-            res = self.model(torch.tensor([window], dtype=torch.long), use_cache=True)
+            res = self.model(torch.tensor([window], dtype=torch.long, device=dev), use_cache=True)
             past = res.kv_caches
             nxt = pick(res.logits[0, -1])
             for _ in range(max_new_tokens):
@@ -380,12 +384,16 @@ class GreedyStudentSampler:
                     # re-prefill of the trailing window rather than silently truncating.
                     window = (window + out)[-max_len:]
                     out_tail: list[int] = []
-                    res = self.model(torch.tensor([window], dtype=torch.long), use_cache=True)
+                    res = self.model(
+                        torch.tensor([window], dtype=torch.long, device=dev), use_cache=True
+                    )
                     past, out = res.kv_caches, out + out_tail
                     nxt = pick(res.logits[0, -1])
                     continue
                 res = self.model(
-                    torch.tensor([[nxt]], dtype=torch.long), past_kvs=past, use_cache=True
+                    torch.tensor([[nxt]], dtype=torch.long, device=dev),
+                    past_kvs=past,
+                    use_cache=True,
                 )
                 past = res.kv_caches
                 nxt = pick(res.logits[0, -1])
@@ -409,7 +417,11 @@ class GreedyStudentSampler:
         with torch.no_grad():
             for _ in range(max_new_tokens):
                 window = ids[-max_len:]
-                logits = self.model(torch.tensor([window], dtype=torch.long)).logits[0, -1]
+                logits = self.model(
+                    torch.tensor(
+                        [window], dtype=torch.long, device=next(self.model.parameters()).device
+                    )
+                ).logits[0, -1]
                 if self.temperature <= 0:
                     nxt = int(torch.argmax(logits))
                 else:
