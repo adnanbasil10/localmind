@@ -246,6 +246,86 @@ class VLLMTeacher:
         return [o.outputs[0].text.strip() for o in outputs]
 
 
+@dataclass
+class TransformersTeacher:
+    """A real teacher via HuggingFace ``transformers``, for when vLLM will not install.
+
+    vLLM is the right tool -- its continuous batching is what makes 50k short outputs fit
+    in the 1-2 hours SS9 budgets -- but on Kaggle it resolves to a build linked against
+    CUDA 13 while the image ships CUDA 12.8, so importing it dies with
+    ``libcudart.so.13: cannot open shared object file``. This is the fallback: same
+    Teacher Protocol, ordinary batched ``model.generate``, several times slower.
+
+    Budget roughly an order of magnitude more wall-clock per output than vLLM. Generate
+    fewer examples rather than pretending the throughput is comparable.
+    """
+
+    model_id: str = "Qwen/Qwen2.5-3B-Instruct"
+    device: str = "cuda"
+    dtype: str = "float16"
+    batch_size: int = 16
+    _tok: Any = None
+    _model: Any = None
+
+    @property
+    def name(self) -> str:
+        return f"transformers:{self.model_id}"
+
+    def _ensure_loaded(self) -> None:  # pragma: no cover - needs a GPU
+        if self._model is not None:
+            return
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        self._tok = AutoTokenizer.from_pretrained(self.model_id)
+        if self._tok.pad_token_id is None:
+            self._tok.pad_token = self._tok.eos_token
+        # Left padding: with right padding the continuation starts after the pad run and
+        # every output is garbage for the shorter prompts in a batch.
+        self._tok.padding_side = "left"
+        self._model = (
+            AutoModelForCausalLM.from_pretrained(
+                self.model_id, torch_dtype=getattr(torch, self.dtype)
+            )
+            .to(self.device)
+            .eval()
+        )
+
+    def generate(
+        self,
+        prompts: Sequence[str],
+        *,
+        max_tokens: int = 64,
+        temperature: float = 0.0,
+        seed: int = 0,
+    ) -> list[str]:  # pragma: no cover - needs a GPU
+        import torch
+
+        self._ensure_loaded()
+        torch.manual_seed(seed)
+        out: list[str] = []
+        for i in range(0, len(prompts), self.batch_size):
+            chunk = list(prompts[i : i + self.batch_size])
+            rendered = [
+                self._tok.apply_chat_template(
+                    [{"role": "user", "content": p}], tokenize=False, add_generation_prompt=True
+                )
+                for p in chunk
+            ]
+            enc = self._tok(rendered, return_tensors="pt", padding=True).to(self.device)
+            with torch.no_grad():
+                gen = self._model.generate(
+                    **enc,
+                    max_new_tokens=max_tokens,
+                    do_sample=temperature > 0,
+                    temperature=temperature if temperature > 0 else None,
+                    pad_token_id=self._tok.pad_token_id,
+                )
+            for row, src in zip(gen, enc["input_ids"], strict=True):
+                out.append(self._tok.decode(row[len(src) :], skip_special_tokens=True).strip())
+        return out
+
+
 _FIELD_RE = re.compile(r"^([A-Z_]+):[ \t]*(.*)$", re.MULTILINE)
 
 
@@ -1357,9 +1437,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.generate_teacher_data:
         parser.error("nothing to do: pass --generate-teacher-data")
 
-    teacher: Teacher = (
-        DeterministicFakeTeacher() if args.fake_teacher else VLLMTeacher(model=args.teacher)
-    )
+    # vLLM is preferred (continuous batching is what makes 50k outputs affordable), but on
+    # Kaggle it resolves to a CUDA-13 build against a CUDA-12.8 image and dies on import
+    # with libcudart.so.13. --backend transformers is the working fallback.
+    teacher: Teacher
+    if args.fake_teacher:
+        teacher = DeterministicFakeTeacher()
+    elif args.backend == "transformers":
+        teacher = TransformersTeacher(model_id=args.teacher, batch_size=args.batch_size)
+    else:
+        teacher = VLLMTeacher(model=args.teacher)
+    print(f"[sft] teacher = {teacher.name}", flush=True)
     examples = generate_sft_dataset(teacher, n, seed=args.seed, job_mix=mix)
     path = write_examples(examples, args.out)
     counts = Counter(f"{e.job}/{e.label}" for e in examples)
