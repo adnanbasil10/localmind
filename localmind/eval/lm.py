@@ -138,6 +138,13 @@ def score_checkpoint(
     val_ce = mean_loss(val_loader, iters)
     gap = val_ce - train_ce
 
+    # A negative gap means val scored BETTER than "train", which cannot happen when the
+    # model actually trained on these shards. It is the signature of pointing this tool at a
+    # corpus the checkpoint never saw -- in which case both numbers are held-out and the gap
+    # measures sampling noise, not generalisation. Say so instead of reporting a verdict the
+    # reader will misread as a clean bill of health.
+    mismatched = gap < 0
+
     # bits-per-byte is the tokenizer-invariant figure; ce is in nats per token.
     bpt = getattr(val_loader, "bytes_per_token", None) or 4.0
     to_bpb = lambda ce: ce / (math.log(2) * bpt)  # noqa: E731
@@ -153,7 +160,16 @@ def score_checkpoint(
         "train_bpb": round(to_bpb(train_ce), 4),
         "val_bpb": round(to_bpb(val_ce), 4),
         "bytes_per_token": bpt,
-        "verdict": verdict_for_gap(gap),
+        "shards_look_unseen": mismatched,
+        "verdict": (
+            "INCONCLUSIVE — val scored better than train (gap "
+            f"{gap:.4f} < 0), which is impossible if the model trained on these shards. "
+            "You are almost certainly scoring against a corpus the checkpoint never saw, so "
+            "both figures are held-out and the gap is noise. Compare val_ce against the "
+            "training loss reported by the ORIGINAL run instead."
+            if mismatched
+            else verdict_for_gap(gap)
+        ),
     }
 
 
