@@ -49,6 +49,9 @@ from localmind.post.dpo import (
     run_dpo,
     sequence_logprob,
 )
+from localmind.post.dpo import (
+    main as dpo_main,
+)
 from localmind.post.grpo import (
     ADVANTAGE_EPS,
     DEFAULT_GROUP_SIZE,
@@ -59,6 +62,9 @@ from localmind.post.grpo import (
     run_grpo,
     sample_group,
     verifiable_reward,
+)
+from localmind.post.grpo import (
+    main as grpo_main,
 )
 from localmind.post.kd import (
     DEFAULT_ALPHA,
@@ -1538,3 +1544,246 @@ def test_stage_result_improved_uses_quarters_not_a_single_step(
     assert len(payload["history"]) == result.steps
     assert payload["improved"] == result.improved
     assert result.mean_loss(first_k=2) != result.mean_loss(last_k=2)
+
+
+# ------------------------------------------------------------------------------------ #
+# CLI entrypoints
+#
+# `python -m localmind.post.dpo` and `python -m localmind.post.grpo` used to validate the
+# config and then raise SystemExit telling the reader to run
+# notebooks/kaggle/02_distill.ipynb -- which runs these same two CLIs. The training
+# functions were tested; nothing called them. These tests exist so that circle cannot
+# quietly come back: they drive the entrypoints, not the library functions.
+# ------------------------------------------------------------------------------------ #
+@pytest.fixture
+def cli_artifacts(tmp_path: Path, tiny_cfg: ModelConfig, tokenizer: Tokenizer) -> dict[str, Path]:
+    """A model-config yaml, a tokenizer json and a checkpoint on disk -- what the CLIs read."""
+    model_yaml = tmp_path / "tiny_model.yaml"
+    model_yaml.write_text(yaml.safe_dump(TINY_MODEL), encoding="utf-8")
+    tok_json = tmp_path / "tok.json"
+    tokenizer.save(tok_json)
+    torch.manual_seed(1337)
+    ckpt = tmp_path / "kd_sequence.pt"
+    torch.save(
+        {"model": LocalMindTransformer(tiny_cfg, backend="sdpa_math").state_dict(), "arm": "seq"},
+        ckpt,
+    )
+    return {"model_yaml": model_yaml, "tokenizer": tok_json, "checkpoint": ckpt}
+
+
+def _write_cli_config(path: Path, base: Path, **overrides: Any) -> Path:
+    raw = yaml.safe_load(base.read_text(encoding="utf-8"))
+    raw.update(overrides)
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return path
+
+
+def test_dpo_cli_dry_run_validates_the_config_and_stops() -> None:
+    assert dpo_main(["--config", str(CONFIG_DIR / "dpo.yaml"), "--dry-run"]) == 0
+    with pytest.raises(SystemExit):
+        dpo_main(["--config", str(CONFIG_DIR / "dpo.yaml")])  # no tokenizer, no checkpoint
+
+
+def test_dpo_cli_trains_the_policy_against_a_frozen_reference(
+    cli_artifacts: dict[str, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The point of the entrypoint: one checkpoint, two models, one of them frozen."""
+    out = tmp_path / "dpo_out"
+    cfg = _write_cli_config(
+        tmp_path / "dpo.yaml",
+        CONFIG_DIR / "dpo.yaml",
+        model_config=str(cli_artifacts["model_yaml"]),
+        n_pairs=8,
+        seq_len=96,
+        micro_batch_size=4,
+        epochs=5,
+        peak_lr=1.0e-3,
+        precision="fp32",
+        out_dir=str(out),
+    )
+    rc = dpo_main(
+        [
+            "--config",
+            str(cfg),
+            "--tokenizer",
+            str(cli_artifacts["tokenizer"]),
+            "--checkpoint",
+            str(cli_artifacts["checkpoint"]),
+        ]
+    )
+    assert rc == 0
+    assert (out / "dpo_policy.pt").exists()
+
+    payload = json.loads((out / "dpo_metrics.json").read_text(encoding="utf-8"))
+    assert payload["stage"] == "dpo"
+    margins = [h["reward_margin"] for h in payload["history"]]
+    # Step 0: policy and reference hold the same weights, so every log-ratio is exactly 0.
+    # A non-zero margin here would mean they were not loaded from the same checkpoint.
+    assert margins[0] == pytest.approx(0.0, abs=1e-6)
+    assert margins[-1] > margins[0], f"reward margin did not rise: {margins[0]} -> {margins[-1]}"
+    assert payload["final_loss"] < payload["initial_loss"]
+    # A reference that drifted along with the policy would leave this at exactly 0.
+    assert payload["kl_from_reference_k3"] > 0.0
+    assert "SYNTHETIC" in capsys.readouterr().out
+
+
+def test_dpo_cli_prefers_a_pairs_file_over_the_synthetic_fallback(
+    cli_artifacts: dict[str, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_path.write_text(
+        "\n".join(json.dumps(p.model_dump()) for p in build_preference_pairs(6, seed=5)),
+        encoding="utf-8",
+    )
+    cfg = _write_cli_config(
+        tmp_path / "dpo.yaml",
+        CONFIG_DIR / "dpo.yaml",
+        model_config=str(cli_artifacts["model_yaml"]),
+        n_pairs=64,  # ignored: --pairs wins
+        seq_len=96,
+        micro_batch_size=3,
+        epochs=1,
+        precision="fp32",
+        out_dir=str(tmp_path / "dpo_out"),
+    )
+    rc = dpo_main(
+        [
+            "--config",
+            str(cfg),
+            "--tokenizer",
+            str(cli_artifacts["tokenizer"]),
+            "--checkpoint",
+            str(cli_artifacts["checkpoint"]),
+            "--pairs",
+            str(pairs_path),
+        ]
+    )
+    assert rc == 0
+    text = capsys.readouterr().out
+    assert "pairs=6" in text
+    assert "SYNTHETIC" not in text
+
+
+def test_greedy_decoding_collapses_a_grpo_group_but_temperature_does_not(
+    tiny_model: LocalMindTransformer, tokenizer: Tokenizer
+) -> None:
+    """Why the GRPO CLI refuses temperature 0 outright instead of warning about it.
+
+    `sample_group` asks one sampler for ``G`` completions from one prompt. Greedy decoding
+    returns the same string ``G`` times, so all ``G`` rewards are equal and
+    `group_advantages` -- correctly -- returns exact zeros. The run then trains on a loss
+    that is identically 0 and reports success having changed nothing.
+    """
+    prompt = tokenizer.encode("what does the handbook say about parental leave?")[:16]
+    greedy = GreedyStudentSampler(model=tiny_model, eos_id=tokenizer.eos_id, temperature=0.0)
+    collapsed = {tuple(greedy.generate(prompt, 6, sample_index=i)) for i in range(4)}
+    assert len(collapsed) == 1, "greedy produced distinct rollouts; the premise has changed"
+    assert torch.equal(group_advantages(torch.tensor([0.5] * 4)), torch.zeros(4))
+
+    sampled = GreedyStudentSampler(model=tiny_model, eos_id=tokenizer.eos_id, temperature=1.0)
+    spread = {tuple(sampled.generate(prompt, 6, sample_index=i)) for i in range(4)}
+    assert len(spread) > 1, "temperature sampling must give a group something to compare"
+
+
+def test_grpo_cli_dry_run_validates_the_config_and_stops() -> None:
+    assert grpo_main(["--config", str(CONFIG_DIR / "grpo.yaml"), "--dry-run"]) == 0
+    with pytest.raises(SystemExit):
+        grpo_main(["--config", str(CONFIG_DIR / "grpo.yaml")])  # no tokenizer, no checkpoint
+
+
+def test_grpo_cli_refuses_greedy_sampling(cli_artifacts: dict[str, Path], tmp_path: Path) -> None:
+    cfg = _write_cli_config(
+        tmp_path / "grpo.yaml",
+        CONFIG_DIR / "grpo.yaml",
+        model_config=str(cli_artifacts["model_yaml"]),
+        n_prompts=2,
+        group_size=2,
+        max_new_tokens=4,
+        seq_len=96,
+        precision="fp32",
+        out_dir=str(tmp_path / "grpo_out"),
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        grpo_main(
+            [
+                "--config",
+                str(cfg),
+                "--tokenizer",
+                str(cli_artifacts["tokenizer"]),
+                "--checkpoint",
+                str(cli_artifacts["checkpoint"]),
+                "--temperature",
+                "0.0",
+            ]
+        )
+    assert excinfo.value.code == 2
+
+
+def test_grpo_cli_runs_and_makes_a_dead_run_loud(
+    cli_artifacts: dict[str, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An untrained policy emits no parseable JSON, so there is nothing to learn. Say so.
+
+    This is the honest outcome for a checkpoint that has not had enough SFT, and it is the
+    outcome the entrypoint must not dress up as success: mean reward 0, every group
+    degenerate, and warnings on the way out.
+    """
+    out = tmp_path / "grpo_out"
+    cfg = _write_cli_config(
+        tmp_path / "grpo.yaml",
+        CONFIG_DIR / "grpo.yaml",
+        model_config=str(cli_artifacts["model_yaml"]),
+        n_prompts=2,
+        group_size=2,
+        max_new_tokens=4,
+        sampling_temperature=1.0,
+        seq_len=96,
+        precision="fp32",
+        out_dir=str(out),
+    )
+    rc = grpo_main(
+        [
+            "--config",
+            str(cfg),
+            "--tokenizer",
+            str(cli_artifacts["tokenizer"]),
+            "--checkpoint",
+            str(cli_artifacts["checkpoint"]),
+        ]
+    )
+    assert rc == 0
+    assert (out / "grpo_policy.pt").exists()
+
+    payload = json.loads((out / "grpo_metrics.json").read_text(encoding="utf-8"))
+    assert payload["stage"] == "grpo"
+    assert payload["steps"] == 2
+    assert payload["use_value_network"] is False
+    assert payload["group_size"] == 2
+    assert payload["format_valid_rate"] == 0.0
+    assert payload["degenerate_group_frac"] == 1.0
+    assert any("degenerate" in w for w in payload["warnings"])
+    assert "WARNING" in capsys.readouterr().out
+
+
+def test_pad_rollouts_keeps_the_completion_when_the_prompt_overflows() -> None:
+    """A short seq_len must not silently delete every training label.
+
+    `_pad_rollouts` used to build [*prompt, *completion][:max_len]. When the prompt alone
+    exceeded max_len the completion was cut entirely, every label became IGNORE_INDEX, the
+    loss was taken over nothing, and GRPO reported a clean run with a zero gradient. The
+    grader prompt is ~400 tokens, so every small-seq_len run was a silent no-op.
+    """
+    from localmind.post.grpo import IGNORE_INDEX, RolloutSample, _pad_rollouts
+
+    prompt = list(range(100, 500))  # 400-token prompt
+    completion = [7, 8, 9, 10]
+    sample = RolloutSample(prompt_ids=prompt, completion_ids=completion, text="", reward=1.0)
+
+    _ids, labels = _pad_rollouts([sample], pad_id=0, max_len=64)
+
+    supervised = (labels != IGNORE_INDEX).sum().item()
+    assert supervised > 0, "every label was masked: the completion was truncated away"
+    kept = [int(v) for v in labels.flatten().tolist() if v != IGNORE_INDEX]
+    # The whole completion is supervised: the label at the prompt/completion boundary is
+    # the first completion token, so the shift does not cost the leading one.
+    assert kept == completion, f"expected the completion to survive, got {kept}"

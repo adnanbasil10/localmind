@@ -515,8 +515,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Phase 5c DPO on the rewriter")
     parser.add_argument("--config", required=True)
     parser.add_argument("--beta", type=float, default=None)
-    parser.add_argument("--tokenizer", default=None)
-    parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--tokenizer", default=None, help="path to a trained tokenizer json")
+    parser.add_argument(
+        "--checkpoint",
+        default=None,
+        help="SFT/KD checkpoint: BOTH the starting policy and the frozen reference",
+    )
+    parser.add_argument(
+        "--pairs",
+        default=None,
+        help="JSONL of PreferencePair; omit to synthesise pairs offline (see below)",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
@@ -528,10 +537,104 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if not args.tokenizer or not args.checkpoint:
         parser.error("--tokenizer and --checkpoint are required unless --dry-run is passed")
-    raise SystemExit(
-        "training entrypoint requires an SFT checkpoint as the reference policy; run "
-        "this from notebooks/kaggle/02_distill.ipynb on a T4"
+
+    # Everything below used to be a SystemExit telling the reader to run the notebook --
+    # which called this same CLI. `run_dpo` existed all along; nothing invoked it. Wire it up.
+    import torch
+
+    from localmind.model import LocalMindTransformer, ModelConfig
+    from localmind.tokenizer.tokenizer import Tokenizer
+
+    tokenizer = Tokenizer.load(args.tokenizer)
+    # NB: cfg.model_config is pydantic v2's reserved ConfigDict, not this field.
+    model_cfg = ModelConfig.from_yaml(cfg.model_config_path)
+
+    def load_checkpoint(role: str) -> LocalMindTransformer:
+        model = LocalMindTransformer(model_cfg)
+        blob = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+        state = blob.get("model", blob) if isinstance(blob, dict) else blob
+        state = {k.removeprefix("module."): v for k, v in state.items()}
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        print(
+            f"[dpo] loaded {args.checkpoint} as {role} "
+            f"(missing={len(missing)} unexpected={len(unexpected)})"
+        )
+        return model
+
+    # DPO's reference *is* the SFT/KD checkpoint, frozen -- that is what the objective
+    # means -- so the one file is loaded twice into two independent modules.
+    # `load_state_dict` copies into each module's own parameters, so nothing is aliased;
+    # the guard below refuses to start if that ever stops being true, because a reference
+    # that drifts with the policy makes `log pi - log pi_ref` zero by construction and
+    # every number this stage reports meaningless.
+    policy = load_checkpoint("policy")
+    reference = load_checkpoint("reference (frozen)")
+    reference.eval()
+    reference.requires_grad_(False)
+    if {id(p) for p in policy.parameters()} & {id(p) for p in reference.parameters()}:
+        raise RuntimeError(  # pragma: no cover - defensive
+            "policy and reference share parameters; the DPO KL term would be identically 0"
+        )
+
+    if args.pairs:
+        with open(args.pairs, encoding="utf-8") as fh:
+            pairs = [PreferencePair.model_validate(json.loads(ln)) for ln in fh if ln.strip()]
+        source = args.pairs
+    else:
+        # No preference file: fall back to the same deterministic, gold-by-construction
+        # machinery `localmind.post.sft --fake-teacher` runs on, so the stage is runnable
+        # offline on CPU. Say so loudly -- a reward margin measured on synthetic pairs
+        # shows the objective is wired up, not that rewrite quality improved.
+        pairs = build_preference_pairs(cfg.n_pairs, seed=cfg.seed)
+        source = "SYNTHETIC (build_preference_pairs; no --pairs given)"
+        print(
+            "[dpo] WARNING: no --pairs given, so the preference set is SYNTHETIC -- built "
+            "by build_preference_pairs from the deterministic fake-teacher seed pool. The "
+            "reward margin below measures that DPO is wired up correctly, NOT that the "
+            "rewriter got better. Pass --pairs with real preferences before believing it."
+        )
+    if not pairs:
+        parser.error(f"no preference pairs loaded from {args.pairs}")
+    print(
+        f"[dpo] pairs={len(pairs)} source={source} beta={cfg.beta} "
+        f"seq_len={cfg.seq_len} epochs={cfg.epochs}"
     )
+
+    result = run_dpo(
+        policy,
+        reference,
+        tokenizer,
+        pairs,
+        cfg=cfg,
+        beta=cfg.beta,
+        batch_size=cfg.micro_batch_size,
+        epochs=cfg.epochs,
+        peak_lr=cfg.peak_lr,
+        seq_len=cfg.seq_len,
+        seed=cfg.seed,
+    )
+
+    out_dir = Path(cfg.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ckpt = out_dir / "dpo_policy.pt"
+    torch.save({"model": policy.state_dict(), "stage": "dpo", "beta": cfg.beta}, ckpt)
+    (out_dir / "dpo_metrics.json").write_text(
+        json.dumps(result.to_dict(), indent=2, default=str), encoding="utf-8"
+    )
+
+    # StageResult exposes initial_loss/final_loss -- not first_loss/last_loss, which
+    # silently give `nan -> nan` while training works fine.
+    stage = result.stage_result
+    print(
+        f"[dpo] done: steps={stage.steps} "
+        f"loss {stage.initial_loss:.4f} -> {stage.final_loss:.4f} (improved={stage.improved}) | "
+        f"reward margin {result.reward_margin:+.4f} acc {result.reward_accuracy:.2f} | "
+        f"KL k1={result.kl_k1:.4f} k3={result.kl_k3:.4f} nats/token "
+        f"(warn > {result.kl_threshold}) -> {ckpt}"
+    )
+    for w in result.warnings:
+        print(f"[dpo] WARNING: {w}")
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

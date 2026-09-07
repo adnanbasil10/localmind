@@ -282,8 +282,21 @@ def _pad_rollouts(
 
     rows: list[tuple[list[int], list[int]]] = []
     for s in samples:
-        full = [*s.prompt_ids, *s.completion_ids][:max_len]
-        start = min(len(s.prompt_ids), len(full))
+        prompt, completion = list(s.prompt_ids), list(s.completion_ids)
+        # Trim the PROMPT HEAD, never the completion. Right-truncating
+        # [*prompt, *completion][:max_len] silently deletes the completion whenever the
+        # prompt alone exceeds max_len -- every label becomes IGNORE_INDEX, the loss is
+        # taken over nothing, the gradient is zero, and the run reports success. The
+        # grader prompt is ~400 tokens, so any seq_len below that turned GRPO into a
+        # no-op. `sft.encode_sft_example` already drops the prompt head for this reason.
+        budget = max_len - len(completion)
+        if budget < 0:
+            # Even the completion alone overflows; keep its head and train on what fits.
+            prompt, completion = [], completion[:max_len]
+        else:
+            prompt = prompt[-budget:] if budget else []
+        full = [*prompt, *completion]
+        start = len(prompt)
         labels = [full[k] if k >= start else IGNORE_INDEX for k in range(len(full))]
         rows.append((full[:-1], labels[1:]))
     width = max(max((len(r[0]) for r in rows), default=1), 1)
@@ -618,24 +631,133 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Phase 5d GRPO with verifiable rewards")
     parser.add_argument("--config", required=True)
     parser.add_argument("--group-size", type=int, default=None)
-    parser.add_argument("--tokenizer", default=None)
-    parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--tokenizer", default=None, help="path to a trained tokenizer json")
+    parser.add_argument("--checkpoint", default=None, help="SFT+KD checkpoint to start from")
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="override sampling_temperature; must be > 0 or every group is degenerate",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
     cfg = GRPOConfig.from_yaml(args.config)
+    overrides: dict[str, Any] = {}
     if args.group_size is not None:
-        cfg = cfg.model_copy(update={"group_size": args.group_size})
+        overrides["group_size"] = args.group_size
+    if args.temperature is not None:
+        overrides["sampling_temperature"] = args.temperature
+    if overrides:
+        # `model_copy` does not re-validate, so the Field constraints above are not
+        # enforced on an override; check the one that matters by hand.
+        cfg = cfg.model_copy(update=overrides)
     print(json.dumps(cfg.model_dump(by_alias=True), default=str))
     print(f"group size {cfg.group_size}, no value network, reward = format AND correctness")
     if args.dry_run:
         return 0
     if not args.tokenizer or not args.checkpoint:
         parser.error("--tokenizer and --checkpoint are required unless --dry-run is passed")
-    raise SystemExit(
-        "training entrypoint requires an SFT+KD checkpoint; run this from "
-        "notebooks/kaggle/02_distill.ipynb on a T4"
+
+    # Everything below used to be a SystemExit telling the reader to run the notebook --
+    # which called this same CLI. `run_grpo` existed all along; nothing invoked it.
+    import torch
+
+    from localmind.model import LocalMindTransformer, ModelConfig
+    from localmind.post.kd import GreedyStudentSampler
+    from localmind.tokenizer.tokenizer import Tokenizer
+
+    tokenizer = Tokenizer.load(args.tokenizer)
+    # NB: cfg.model_config is pydantic v2's reserved ConfigDict, not this field.
+    model_cfg = ModelConfig.from_yaml(cfg.model_config_path)
+
+    def load_checkpoint(role: str) -> LocalMindTransformer:
+        model = LocalMindTransformer(model_cfg)
+        blob = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+        state = blob.get("model", blob) if isinstance(blob, dict) else blob
+        state = {k.removeprefix("module."): v for k, v in state.items()}
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        print(
+            f"[grpo] loaded {args.checkpoint} as {role} "
+            f"(missing={len(missing)} unexpected={len(unexpected)})"
+        )
+        return model
+
+    policy = load_checkpoint("policy")
+    reference: LocalMindTransformer | None = None
+    if cfg.kl_coef > 0.0:
+        # Only loaded when the KL tether is switched on. The default `kl_coef = 0` is the
+        # cheap configuration SS9 5d describes: a verifiable reward cannot be gamed, so
+        # there is nothing for a reference policy to protect against.
+        reference = load_checkpoint("reference (frozen)")
+        reference.eval()
+        reference.requires_grad_(False)
+    else:
+        print("[grpo] kl_coef=0: no reference policy loaded (verifiable rewards cannot be gamed)")
+
+    # `GreedyStudentSampler` is reused rather than reimplemented, but its name is only
+    # half the story: at ``temperature > 0`` it samples from the softmax with a per-rollout
+    # RNG seed (``sample_index``), which is the mode GRPO needs.
+    #
+    # GREEDY DECODING IS INVALID FOR GRPO. `sample_group` asks the sampler for ``G``
+    # completions from ONE prompt; at temperature 0 it returns G identical strings, so all
+    # G rewards are equal, `group_advantages` correctly returns exact zeros, `grpo_loss`
+    # is identically 0, and the whole run "succeeds" having changed nothing. That failure
+    # is silent by construction, so it is refused here rather than warned about.
+    if cfg.sampling_temperature <= 0.0:
+        parser.error(
+            "sampling_temperature must be > 0: greedy decoding returns the same completion "
+            "for every member of a group, so every group-relative advantage is exactly "
+            "zero and GRPO trains on a loss that is identically 0"
+        )
+    sampler = GreedyStudentSampler(
+        model=policy,
+        eos_id=tokenizer.eos_id,
+        temperature=cfg.sampling_temperature,
+        seed=cfg.seed,
     )
+    print(
+        f"[grpo] job={cfg.job} n_prompts={cfg.n_prompts} group_size={cfg.group_size} "
+        f"temperature={cfg.sampling_temperature} max_new_tokens={cfg.max_new_tokens}"
+    )
+
+    result = run_grpo(
+        policy,
+        tokenizer,
+        sampler,
+        cfg=cfg,
+        reference=reference,
+        group_size=cfg.group_size,
+        n_prompts=cfg.n_prompts,
+        max_new_tokens=cfg.max_new_tokens,
+        peak_lr=cfg.peak_lr,
+        clip_eps=cfg.clip_eps,
+        kl_coef=cfg.kl_coef,
+        seq_len=cfg.seq_len,
+        seed=cfg.seed,
+    )
+
+    out_dir = Path(cfg.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ckpt = out_dir / "grpo_policy.pt"
+    torch.save({"model": policy.state_dict(), "stage": "grpo", "group_size": cfg.group_size}, ckpt)
+    (out_dir / "grpo_metrics.json").write_text(
+        json.dumps(result.to_dict(), indent=2, default=str), encoding="utf-8"
+    )
+
+    # StageResult exposes initial_loss/final_loss -- not first_loss/last_loss, which
+    # silently give `nan -> nan` while training works fine.
+    stage = result.stage_result
+    print(
+        f"[grpo] done: steps={stage.steps} "
+        f"loss {stage.initial_loss:.4f} -> {stage.final_loss:.4f} | "
+        f"mean reward {result.mean_reward:.4f} "
+        f"(format-valid {result.format_valid_rate:.1%}, correct {result.correct_rate:.1%}) | "
+        f"degenerate groups {result.degenerate_group_frac:.1%} -> {ckpt}"
+    )
+    for w in result.warnings:
+        print(f"[grpo] WARNING: {w}")
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
