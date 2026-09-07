@@ -52,10 +52,17 @@ Weights: <https://huggingface.co/Adnanbasil/localmind-31m>
 The WSD decay is where the last gain came from — loss moved 2.956 → 2.976 across 500 late stable-phase
 steps, then **2.956 → 2.454 over the 18% decay**. That is ADR 0002's argument, measured.
 
-**Caveats, not footnotes:** 1.5B tokens over a **49.6M-token** corpus is ~30 epochs, not 1.5B unique
-tokens. **No held-out split was built**, so memorisation is unmeasured and 2.4509 is a *training*
-loss only. **No code data** — Stack v2 was gated, then pathologically slow, then 503ing. One seed,
-no CI, unlike every other table here.
+**Held-out result:** scored on a 2,000-doc split (13-gram decontaminated from training), this
+model reaches **val ce 2.6891 / bpb 0.9699** — a generalisation gap of ~0.24. It learned rather
+than memorised, despite ~30 epochs.
+
+**A retrain on 4× the data made it worse.** v2 (196M-token corpus, 7.6 epochs, same 1.5B budget)
+scored **val ce 3.0437** — 0.35 nats worse. Its gap of 0.0764 shows underfitting, not overfitting:
+at a fixed token budget this 31M model preferred many passes over less data. That contradicted the
+prediction and cost ~4 GPU-hours to establish. See `docs/benchmarks.md` §"Phase 4b".
+
+**Remaining caveats:** **no code data** — Stack v2 was gated, then pathologically slow, then 503ing.
+One seed per arm, no CI, unlike every other table here.
 
 ### Inference engine — CPU, 12M proxy, 3 seeds, bootstrap 95% CI · *measured*
 
@@ -204,6 +211,8 @@ Kept deliberately, per §20 rule 2:
 - BPE exhausted mergeable pairs at 8,062 of a requested 16,384 vocab on the small corpus.
 - The pretraining run reached **19.4% MFU**, above §8's predicted 10–15% but below its 25% stretch
   target; the optimisation sub-project was not attempted.
+- **Training on 4× more data produced a worse model.** Predicted the opposite, spent ~4 GPU-hours
+  on it, and the held-out split said 3.0437 vs 2.6891. Kept as a result, not deleted.
 - **Hourly Hub checkpoint pushes silently never ran** during that 4-hour job. `LOCALMIND_HUB_REPO`
   was set in the notebook and read by nothing, and `hub_due()` returned False without complaint, so
   the only copy of the model sat on a session disk about to be wiped. Fixed: the env var is now

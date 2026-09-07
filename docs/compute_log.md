@@ -10,12 +10,12 @@ the runs that were wasted.
 
 | Bucket | Estimate (§8) | Spent | Remaining |
 |---|---|---|---|
-| Pretrain + ablations | 35 h | **4.2 h** | 30.8 h |
+| Pretrain + ablations | 35 h | **8.4 h** | 26.6 h |
 | Post-training | 10 h | 0 h | 10 h |
 | Teacher generation | 4 h | 0 h | 4 h |
 | ColQwen2 indexing | 2 h | 0 h | 2 h |
 | Eval sweeps | 8 h | 0 h | 8 h |
-| **Total** | **~60 h** | **~8.4 h** | **~51.6 h** |
+| **Total** | **~60 h** | **~12.6 h** | **~47.4 h** |
 
 Kaggle allowance is 30 GPU-h/week, so ~60 h is two weeks of quota spread across 16 calendar weeks.
 Comfortable — provided nothing is wasted on runs that were not checkpointed.
@@ -31,7 +31,9 @@ the most useful entry in the file.
 | 2026-09-02 | Kaggle | 2x T4 | ~0.1 | pretrain (aborted) | **loss** | Stopped deliberately: only 19.3M unique tokens available |
 | 2026-09-02/03 | Kaggle | 2x T4 | **~4.0** | data prep | **WASTED** | Data prep is CPU-only work; a GPU sat idle attached to it. Session then reclaimed mid-build and the shards were lost. |
 | 2026-09-06 | Kaggle | 2x T4 | ~0.3 | data prep (rebuild) | ok | 49,566,720 tokens; done in same session as training this time |
-| 2026-09-06 | Kaggle | 2x T4 | **3.93** | **main pretrain** | **ok** | 5,722 steps, 1.5B tokens, ce_loss 9.7821 -> 2.4509, 19.4% MFU |
+| 2026-09-06 | Kaggle | 2x T4 | **3.93** | **main pretrain (v1)** | **ok** | 5,722 steps, 1.5B tokens, ce 9.7821 -> 2.4509, 19.4% MFU. **Held-out val ce 2.6891.** Best model. |
+| 2026-09-07 | Kaggle | 2x T4 | ~0.2 | data rebuild 200k + val split | ok | 196,147,200 tokens, 2k held-out docs |
+| 2026-09-07 | Kaggle | 2x T4 | **3.93** | **retrain on 4x corpus (v2)** | **negative result** | Same budget, 7.6 epochs. Held-out val ce **3.0437** — 0.35 nats WORSE than v1. Prediction was wrong; kept as a finding. |
 
 ## Non-GPU compute
 
