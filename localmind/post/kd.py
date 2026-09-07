@@ -797,6 +797,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--data", default=None, help="JSONL from localmind.post.sft")
     parser.add_argument("--tokenizer", default=None, help="path to a trained tokenizer json")
     parser.add_argument("--checkpoint", default=None, help="pretrained base to distil FROM")
+    parser.add_argument(
+        "--holdout-frac",
+        type=float,
+        default=0.1,
+        help="fraction of teacher examples held out to detect memorisation. A KD run whose "
+        "train loss collapses while holdout does not has memorised the teacher rather than "
+        "absorbed it, and leaves a zero-entropy policy that makes DPO's KL explode. 0 disables.",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="cap optimiser steps. The cheapest guard against distilling to convergence.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="validate config and exit")
     args = parser.parse_args(argv)
 
@@ -851,6 +865,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     with open(args.data, encoding="utf-8") as fh:
         rows = [_json.loads(line) for line in fh if line.strip()]
     examples = [SFTExample(**r) if not isinstance(r, SFTExample) else r for r in rows]
+    # Hold out a slice BEFORE training so the memorisation check is honest.
+    holdout: list[SFTExample] = []
+    if args.holdout_frac and 0.0 < args.holdout_frac < 1.0 and len(examples) > 20:
+        import random as _random
+
+        rng = _random.Random(cfg.seed)
+        shuffled = list(examples)
+        rng.shuffle(shuffled)
+        n_hold = max(1, int(len(shuffled) * args.holdout_frac))
+        holdout, examples = shuffled[:n_hold], shuffled[n_hold:]
+        print(f"[kd] held out {len(holdout)} example(s) to detect memorisation")
+
     print(f"[kd] arm={args.arm} examples={len(examples)} seq_len={cfg.seq_len}")
 
     result = run_kd(
@@ -864,7 +890,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         peak_lr=cfg.peak_lr,
         epochs=cfg.epochs,
         seed=cfg.seed,
+        max_steps=args.max_steps,
     )
+
+    if holdout:
+        model.eval()
+        # Same packing path the training rows went through, so the two losses are comparable.
+        rows = _rows_from_examples(tokenizer, holdout, cfg.seq_len)
+        total, n = 0.0, 0
+        with torch.no_grad():
+            for row in rows:
+                x = torch.tensor([row.input_ids], dtype=torch.long)
+                y = torch.tensor([row.labels], dtype=torch.long)
+                out = model(x, targets=y)
+                if out.ce_loss is not None and torch.isfinite(out.ce_loss):
+                    total += float(out.ce_loss)
+                    n += 1
+        hold_ce = total / max(1, n)
+        gap = hold_ce - result.final_loss
+        print(f"[kd] holdout ce {hold_ce:.4f} vs train {result.final_loss:.4f} (gap {gap:+.4f})")
+        if gap > 1.0:
+            print(
+                "[kd] WARNING: the student fits its training slice far better than held-out "
+                "teacher outputs. It has MEMORISED the teacher, not absorbed it. The resulting "
+                "policy is near-deterministic, which makes DPO's KL against it explode. "
+                "Re-run with a smaller --max-steps.",
+                flush=True,
+            )
 
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
